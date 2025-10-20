@@ -1,0 +1,6 @@
+# Common requirements shared across ALL Face Recognition services
+# Only dependencies that are used by ALL services should be here
+
+# Common utilities library (used by ALL services)
+numpy==1.24.3
+common_utilities @ git+https://github.com/Mohamed600-DK/Python_Utilities.git@main

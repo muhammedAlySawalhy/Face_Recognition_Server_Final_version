@@ -1,0 +1,2 @@
+# Pipeline Manager Service Requirements
+# Service-specific dependencies only (common deps are in requirements-common.txt)

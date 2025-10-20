@@ -1,0 +1,103 @@
+FROM python:3.10-slim-bookworm AS installer
+
+# Set the working directory
+WORKDIR /install
+COPY requirements.txt .
+RUN pip install --upgrade pip
+# Download packages only
+RUN pip download -v -r requirements.txt -d /install/packages
+#----------------------------------------------------------------------------------#
+FROM python:3.10-slim-bookworm AS base_builder
+
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Set the working directory
+WORKDIR /build
+# Copy the downloaded packages from the installer stage
+COPY --from=installer /install/packages /install/packages
+COPY --from=installer /install/requirements.txt /install/requirements.txt
+# Copy requirements_git.txt only when needed for git packages
+RUN pip install --upgrade pip
+# create a virtual environment
+RUN python -m venv --copies /build/.venv
+
+# Install the packages from the downloaded files
+RUN /build/.venv/bin/pip install -v --no-index --find-links=/install/packages -r /install/requirements.txt
+
+FROM base_builder AS builder
+
+# NOW copy git requirements
+COPY ./requirements.txt /install/requirements.txt
+
+RUN /build/.venv/bin/pip install -v --upgrade -r /install/requirements.txt
+RUN /build/.venv/bin/pip list
+
+# FR App Base Image For All Services - USE DEBIAN BOOKWORM CUDA IMAGE
+FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04 AS runner
+
+# Install Python 3.10 and dependencies in the runtime stage
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y \
+    python3.10 \
+    python3.10-dev \
+    python3.10-venv \
+    libglib2.0-0 \
+    libgl1-mesa-glx \
+    cuda-nvrtc-11-8 \
+    cuda-nvrtc-dev-11-8 \
+    curl \
+    wget \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symlinks for python
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python3
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python
+
+# Create app directory and subdirectories
+WORKDIR /app
+
+# Copy ONLY the virtual environment (not system Python libraries)
+COPY --from=builder /build/.venv /build/.venv
+
+# Set PATH to use the virtual environment
+ENV PATH="/build/.venv/bin:$PATH"
+
+# Copy Service Files
+##1-Gateway Service
+COPY ./services/gateway_server_service /app/services/gateway_server_service
+RUN rm -f /app/services/gateway_server_service/requirements.txt
+
+#2-Pipelines Manager Service
+COPY ./services/pipelines_manager_service /app/services/pipelines_manager_service
+RUN rm -f /app/services/pipelines_manager_service/requirements.txt
+
+#3-Pipeline Worker Service
+COPY ./services/pipeline_worker_service /app/services/pipeline_worker_service
+RUN rm -f /app/services/pipeline_worker_service/requirements.txt
+
+#4-Decision Manager Service
+COPY ./services/decision_manager_service /app/services/decision_manager_service
+RUN rm -f /app/services/decision_manager_service/requirements.txt
+
+#5-Server Manager Service
+COPY ./services/server_manager_service /app/services/server_manager_service
+RUN rm -f /app/services/server_manager_service/requirements.txt
+
+# Make all run scripts executable
+RUN find /app/services -name "*.sh" -type f -exec chmod +x {} \;
+
+COPY ./entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+RUN addgroup --system --gid 1000 run_user
+RUN adduser --system --uid 1000 run_user
+RUN chown -R run_user:run_user /app
+RUN chmod -R 755 /app
+
+USER run_user
+
+# Default entrypoint
+CMD ["/app/entrypoint.sh"]

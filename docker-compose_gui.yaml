@@ -1,0 +1,71 @@
+services:
+  #-------------------------------------------------------------------------------------------------------------#
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  # Fr GUI 
+  fr_GUI:
+    image: fr-server-gui_service:latest
+    container_name: fr_GUI
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      - S1_GET_URL=${S1_GET_URL}
+      - S2_GET_URL=${S2_GET_URL}
+      - S1_UPDATE_URL=${S1_UPDATE_URL}
+      - S2_UPDATE_URL=${S2_UPDATE_URL}
+      - GUI_DATA=${GUI_DATA}
+      - USERDATABASE=${USERDATABASE}
+      - Actions=${Actions}
+      - EXCEL_PATH=${EXCEL_PATH}
+      - GUI_ORIGIN_IP=${GUI_ORIGIN_IP}
+      - GUI_ORIGIN_PORT=${GUI_ORIGIN_PORT}
+      - HOST=192.168.10.3
+      - PORT=3000
+    networks:
+      fr_gui_network:
+        ipv4_address: ${GUI_ORIGIN_IP}
+    volumes:
+      - type: bind
+        source: ${DATA_DIR}/Users_DataBase
+        target: ${USERDATABASE}
+      - type: bind
+        source: ${DATA_DIR}/Actions
+        target: ${Actions}
+      - type: bind
+        source: ${DATA_DIR}/gui_data
+        target: ${GUI_DATA}
+    restart: unless-stopped
+  #-------------------------------------------------------------------------------------------------------------#
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  proxy:
+    image: fr_gui_server_proxy:v1.0
+    container_name: fr_gui_server_proxy
+    environment:
+      LISTEN_PORT: ${PROXY_LISTEN_PORT}
+      SERVER_NAME: ${PROXY_SERVER_NAME}
+      APP_HOST: ${PROXY_APP_HOST}
+      APP_PORT: ${PROXY_APP_PORT}
+      # Nginx configuration parameters
+      CLIENT_MAX_BODY_SIZE: "${PROXY_CLIENT_MAX_BODY_SIZE:-100M}"
+      PROXY_READ_TIMEOUT: "${PROXY_READ_TIMEOUT:-300s}"
+      PROXY_SEND_TIMEOUT: "${PROXY_SEND_TIMEOUT:-300s}"
+      # CSR + SANs for HQ signing flow
+      OUTDIR: ${PROXY_OUTDIR}
+      SRV_CN: ${PROXY_SRV_CN}
+      SAN_DNS: ${PROXY_SAN_DNS}
+      SAN_IP: ${PROXY_SAN_IP}
+    depends_on:
+      - fr_GUI
+    volumes:
+      - ${ROOT_PATH}/certs:/etc/nginx/certs # CSR out / fullchain back in (ro after signing)
+      - ${ROOT_PATH}/config_templates/site.conf.template:/etc/nginx/templates/site.conf.template:ro
+    ports:
+      - "443:443"
+    restart: unless-stopped
+    networks:
+      - fr_gui_network
+#**************************************************************************************************************#
+networks:
+  #______________________________________________________________________________________________________________#
+  fr_gui_network:
+    external: True
+  #______________________________________________________________________________________________________________#

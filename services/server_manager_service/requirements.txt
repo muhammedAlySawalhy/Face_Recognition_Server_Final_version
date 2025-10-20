@@ -1,0 +1,15 @@
+# Server Manager Service Requirements
+# Service-specific dependencies only (common deps are in requirements-common.txt)
+
+# Environment configuration
+python-dotenv
+
+# File handling and async operations
+aiofiles
+
+# HTTP client for external requests
+requests
+
+# Web framework and server
+fastapi
+uvicorn

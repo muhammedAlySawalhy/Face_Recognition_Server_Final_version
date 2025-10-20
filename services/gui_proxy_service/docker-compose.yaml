@@ -1,0 +1,29 @@
+services:
+  proxy:
+    image: fr_gui_server_proxy:latest
+    container_name: fr_gui_server_proxy
+    environment:
+      LISTEN_PORT: "443"
+      SERVER_NAME: "192.168.10.51" # or your domain name
+      APP_HOST: "50.50.0.9" # or service name if proxying a container
+      APP_PORT: "3000"
+
+      # CSR + SANs for HQ signing flow
+      OUTDIR: "/etc/nginx/certs"
+      SRV_CN: "gui.internal"
+      SAN_DNS: "gui.internal,localhost"
+      SAN_IP: "50.50.0.9,127.0.0.1"
+
+    volumes:
+      - ./certs:/etc/nginx/certs # CSR out / fullchain back in (ro after signing)
+      - ./site.conf.template:/etc/nginx/templates/site.conf.template:ro
+
+    ports:
+      - "443:443"
+    restart: unless-stopped
+    # Optional runtime healthcheck (needs curl or wget; add to image if you want)
+    # healthcheck:
+    #   test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ || exit 1"]
+    #   interval: 30s
+    #   timeout: 3s
+    #   retries: 3

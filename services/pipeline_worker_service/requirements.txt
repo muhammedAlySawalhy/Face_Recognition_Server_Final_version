@@ -1,0 +1,17 @@
+# Pipeline Worker Service Requirements
+# Service-specific dependencies only (common deps are in requirements-common.txt)
+
+# PyTorch and related libraries with CUDA support
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.0.0+cu118
+torchvision==0.15.1+cu118
+torchaudio==2.0.1+cu118
+
+# TensorFlow with CUDA support
+tensorflow[and-cuda]==2.14.0
+
+# Deep learning and computer vision frameworks
+deepface
+ultralytics
+supervision
+onnxruntime

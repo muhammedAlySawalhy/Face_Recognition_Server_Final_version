@@ -1,0 +1,151 @@
+services:
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  #-------------------------------------------------------------------------------------------------------------#
+  # Pipeline Worker Services (scalable)
+  pipeline-worker-0:
+    image: fr-server-pipeline_worker_service:latest
+    container_name: fr_pipeline_worker_gpu0_0
+    runtime: nvidia
+    environment:
+      - NAMESPACE=${SERVER_NAME}
+      - NVIDIA_VISIBLE_DEVICES=0
+      - SERVICE_TYPE=pipeline-worker
+      - PIPELINE_ID=0
+      - RMQ_URL=amqp://admin:admin123@rmq_Server:5672
+      - CONFIG_PROFILE=${CONFIG_PROFILE:-prod-1gpu-24gb}
+      - STORAGE_ENDPOINT=${STORAGE_ENDPOINT:-minio:9000}
+      - STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY:-minioadmin}
+      - STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY:-minioadmin}
+      - STORAGE_SECURE=${STORAGE_SECURE:-false}
+      - STORAGE_FRAMES_BUCKET=${STORAGE_FRAMES_BUCKET:-face-frames}
+    volumes:
+      - type: bind
+        source: ${DATA_DIR}/logs/${SERVER_NAME}
+        target: /app/${SERVER_NAME}/logs
+      - type: bind
+        source: ${ROOT_PATH}/Models_Weights
+        target: /app/Models_Weights
+    networks:
+      - rmq_network
+      - storage_network
+    restart: unless-stopped
+    # healthcheck:
+    #   test: [ "CMD", "nc", "-z", "rmq_Server", "5672" ]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 5
+    #   start_period: 40s
+    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+    #-------------------------------------------------------------------------------------------------------------#
+  pipeline-worker-1:
+    image: fr-server-pipeline_worker_service:latest
+    container_name: fr_pipeline_worker_gpu0_1
+    runtime: nvidia
+    environment:
+      - NAMESPACE=${SERVER_NAME}
+      - NVIDIA_VISIBLE_DEVICES=0
+      - SERVICE_TYPE=pipeline-worker
+      - PIPELINE_ID=1
+      - RMQ_URL=amqp://admin:admin123@rmq_Server:5672
+      - CONFIG_PROFILE=${CONFIG_PROFILE:-prod-1gpu-24gb}
+      - STORAGE_ENDPOINT=${STORAGE_ENDPOINT:-minio:9000}
+      - STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY:-minioadmin}
+      - STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY:-minioadmin}
+      - STORAGE_SECURE=${STORAGE_SECURE:-false}
+      - STORAGE_FRAMES_BUCKET=${STORAGE_FRAMES_BUCKET:-face-frames}
+    volumes:
+      - type: bind
+        source: ${DATA_DIR}/logs/${SERVER_NAME}
+        target: /app/${SERVER_NAME}/logs
+      - type: bind
+        source: ${ROOT_PATH}/Models_Weights
+        target: /app/Models_Weights
+    networks:
+      - rmq_network
+      - storage_network
+    restart: unless-stopped
+    # healthcheck:
+    #   test: [ "CMD", "nc", "-z", "rmq_Server", "5672" ]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 5
+    #   start_period: 40s
+    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+    #-------------------------------------------------------------------------------------------------------------#
+  pipeline-worker-2:
+    image: fr-server-pipeline_worker_service:latest
+    container_name: fr_pipeline_worker_gpu0_2
+    runtime: nvidia
+    environment:
+      - NAMESPACE=${SERVER_NAME}
+      - NVIDIA_VISIBLE_DEVICES=0
+      - SERVICE_TYPE=pipeline-worker
+      - PIPELINE_ID=2
+      - MaxClientPerPipeline=30
+      - RMQ_URL=amqp://admin:admin123@rmq_Server:5672
+      - CONFIG_PROFILE=${CONFIG_PROFILE:-prod-1gpu-24gb}
+      - STORAGE_ENDPOINT=${STORAGE_ENDPOINT:-minio:9000}
+      - STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY:-minioadmin}
+      - STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY:-minioadmin}
+      - STORAGE_SECURE=${STORAGE_SECURE:-false}
+      - STORAGE_FRAMES_BUCKET=${STORAGE_FRAMES_BUCKET:-face-frames}
+    volumes:
+      - type: bind
+        source: ${DATA_DIR}/logs/${SERVER_NAME}
+        target: /app/${SERVER_NAME}/logs
+      - type: bind
+        source: ${ROOT_PATH}/Models_Weights
+        target: /app/Models_Weights
+    networks:
+      - rmq_network
+    restart: unless-stopped
+    # healthcheck:
+    #   test: [ "CMD", "nc", "-z", "rmq_Server", "5672" ]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 5
+    #   start_period: 40s
+    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+    #-------------------------------------------------------------------------------------------------------------#
+  pipeline-worker-3:
+    image: fr-server-pipeline_worker_service:latest
+    container_name: fr_pipeline_worker_gpu0_3
+    runtime: nvidia
+    environment:
+      - NAMESPACE=${SERVER_NAME}
+      - NVIDIA_VISIBLE_DEVICES=0
+      - SERVICE_TYPE=pipeline-worker
+      - PIPELINE_ID=3
+      - MaxClientPerPipeline=30
+      - RMQ_URL=amqp://admin:admin123@rmq_Server:5672
+      - CONFIG_PROFILE=${CONFIG_PROFILE:-prod-1gpu-24gb}
+      - STORAGE_ENDPOINT=${STORAGE_ENDPOINT:-minio:9000}
+      - STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY:-minioadmin}
+      - STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY:-minioadmin}
+      - STORAGE_SECURE=${STORAGE_SECURE:-false}
+      - STORAGE_FRAMES_BUCKET=${STORAGE_FRAMES_BUCKET:-face-frames}
+    volumes:
+      - type: bind
+        source: ${DATA_DIR}/logs/${SERVER_NAME}
+        target: /app/${SERVER_NAME}/logs
+      - type: bind
+        source: ${ROOT_PATH}/Models_Weights
+        target: /app/Models_Weights
+    networks:
+      - rmq_network
+    restart: unless-stopped
+    # healthcheck:
+    #   test: [ "CMD", "nc", "-z", "rmq_Server", "5672" ]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 5
+    #   start_period: 40s
+    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+    #-------------------------------------------------------------------------------------------------------------#
+    #**************************************************************************************************************#
+    #**************************************************************************************************************#
+networks:
+  rmq_network:
+    external: True
+  storage_network:
+    external: True
