@@ -78,6 +78,7 @@ RUN apt-get update && apt-get install -y \
 # Copy the service files
 COPY ./${SERVICE_NAME}/ /app/
 COPY ./common_utilities /app/common_utilities
+COPY ./config /app/config
 # Create user and set permissions BEFORE switching user
 RUN addgroup --system --gid 1000 run_user && \
     adduser --system --uid 1000 run_user --ingroup run_user && \

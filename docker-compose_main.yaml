@@ -83,6 +83,7 @@ services:
       - rmq_Server
     networks:
       - rmq_network
+      - storage_network
     restart: unless-stopped
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
   #-------------------------------------------------------------------------------------------------------------#
@@ -140,6 +141,7 @@ services:
     networks:
       redis_network:
       rmq_network:
+      storage_network:
       gui_network:
         ipv4_address: ${SERVER_MANAGER_1_IP}
     restart: unless-stopped

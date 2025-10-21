@@ -41,16 +41,26 @@ class RecognitionFace:
         """
         
         """
-        dummy_input = np.random.randn(240, 240, 3).astype(np.float32)
+        dummy_input = (np.random.rand(240, 240, 3)*255).astype(np.uint8)
         self.__find_image_embedding(dummy_input)
         self.logs.write_logs("'RecognitionFace' Model is Cached !!",LOG_LEVEL.INFO)
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    def recognize_face(self,ref_image: np.ndarray,face_image: np.ndarray,)-> bool:
+    def recognize_face(
+        self,
+        ref_image: np.ndarray | None = None,
+        face_image: np.ndarray | None = None,
+        *,
+        ref_embedding: np.ndarray | None = None,
+    ) -> bool:
         """
+        Compare an incoming face crop against a reference image or a precomputed embedding.
+
+        Either `ref_image` or `ref_embedding` must be provided. `face_image` is required.
         """
-        __check =self.__verify_face(face_image,ref_image)
-        # self.logs.write_logs(f"{__check}",LOG_LEVEL.DEBUG)
-        return __check['verified']
+        if face_image is None:
+            raise ValueError("face_image is required for recognition")
+        __check = self.__verify_face(face_image, ref_image, ref_embedding=ref_embedding)
+        return __check["verified"]
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def __recognition_models(self,model_name:str)-> Union[IResNet,VggFace,InceptionResnetV1]:
         def _setup_model(model, input_size):
@@ -153,20 +163,30 @@ class RecognitionFace:
             self.logs.write_logs(f"Unsupported model type: {type(self.recognition_model)}", LOG_LEVEL.ERROR)
             raise ValueError(f"Unsupported model type: {type(self.recognition_model)}")
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    def __verify_face(self,image:np.ndarray,ref_image:np.ndarray):
-        embedding_image=self.__find_image_embedding(image)
-        embedding_ref_image=self.__find_image_embedding(ref_image)
-        
-        # Ensure we're working with NumPy arrays
-        if hasattr(embedding_image, 'numpy'):
-            embedding_image = embedding_image.numpy()
-        if hasattr(embedding_ref_image, 'numpy'):
-            embedding_ref_image = embedding_ref_image.numpy()
-            
-        # Flatten embeddings to 1D if they're not already
-        embedding_image = embedding_image.flatten()
-        embedding_ref_image = embedding_ref_image.flatten()
-        
+    def get_embedding(self, image: np.ndarray) -> np.ndarray:
+        """Expose embedding computation so callers can cache reference vectors."""
+        embedding = self.__find_image_embedding(image)
+        if hasattr(embedding, "numpy"):
+            embedding = embedding.numpy()
+        return embedding.flatten()
+
+    def __verify_face(
+        self,
+        image: np.ndarray,
+        ref_image: np.ndarray | None,
+        ref_embedding: np.ndarray | None = None,
+    ):
+        embedding_image = self.get_embedding(image)
+        if ref_embedding is None:
+            if ref_image is None:
+                raise ValueError("Either ref_image or ref_embedding must be provided")
+            embedding_ref_image = self.get_embedding(ref_image)
+        else:
+            embedding_ref_image = ref_embedding
+            if hasattr(embedding_ref_image, "numpy"):
+                embedding_ref_image = embedding_ref_image.numpy()
+            embedding_ref_image = embedding_ref_image.flatten()
+
         if self.recognition_metric == "euclidean":
             min_distance = np.linalg.norm(embedding_image - embedding_ref_image)
             threshold = self.recognition_threshold  # Adjust based on dataset

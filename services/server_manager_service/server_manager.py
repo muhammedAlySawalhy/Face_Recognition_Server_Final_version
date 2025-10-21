@@ -18,7 +18,7 @@ import time
 
 def main():
     # Complete system initialization (paths, directories, Redis, logger)
-    paths, management_logger = full_system_initialization(__file__, "Management_Service" )
+    paths, management_logger, storage_client = full_system_initialization(__file__, "Management_Service" )
     # Get environment configuration
     env_config = get_environment_config()
     # Create Server Manager
@@ -26,7 +26,8 @@ def main():
         "Server_Files_Handler",
         gui_backend_ip=env_config["GUI_BACKEND_IP"],
         gui_backend_port=env_config["GUI_BACKEND_PORT"],
-        logger=management_logger
+        logger=management_logger,
+        storage_client=storage_client,
     )
     
     management_logger.write_logs("Starting Management Service...", LOG_LEVEL.INFO)

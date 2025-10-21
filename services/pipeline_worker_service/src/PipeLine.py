@@ -150,6 +150,7 @@ class PipeLine(Base_process):
         def phone_detection_pipeline(payload):
             try:
                 client_data = self._hydrate_payload(payload)
+                client_data.pop("ref_image", None)
                 start_time = time.time()
                 phone_detection_result = models_manager.phone_model_pipeline(
                     client_data
@@ -180,6 +181,7 @@ class PipeLine(Base_process):
             client_data = None
             try:
                 client_data = self._hydrate_payload(payload)
+                client_data.pop("ref_image", None)
                 start_time = time.time()
                 recognition_anti_spoof_result = models_manager.face_model_pipeline(
                     client_data
@@ -204,8 +206,9 @@ class PipeLine(Base_process):
                 )
                 self.__STOP.value = True
             finally:
-                if client_data is not None:
-                    self._cleanup_storage(client_data)
+                # Leave frame objects in storage; downstream consumers (Decision Manager,
+                # audit tooling) still need them. Bucket lifecycle handles eventual cleanup.
+                pass
 
     # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def __setup_RMQ_connections(self):

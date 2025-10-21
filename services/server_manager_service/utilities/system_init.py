@@ -5,7 +5,16 @@ Handles path setup, directory creation, and environment configuration
 that was originally in main.py
 """
 import os
-from common_utilities import RedisHandler, get_root_path, LOGGER, set_paths, set_namespace, LOG_LEVEL
+from common_utilities import (
+    RedisHandler,
+    get_root_path,
+    LOGGER,
+    set_paths,
+    set_namespace,
+    LOG_LEVEL,
+    ConfigManager,
+    build_storage_client,
+)
 from .files_handler import (
     create_server_Data_Directory,
     create_Users_Actions_Directory
@@ -53,7 +62,7 @@ def create_required_directories():
 def full_system_initialization(service_file_path, service_name):
     """
     Complete system initialization for a microservice
-    Returns: (paths_dict, models_parameters, redis_clients_status, redis_clients_data, service_logger)
+    Returns: (paths_dict, service_logger, storage_client)
     """
     # Initialize paths
     paths = initialize_system_paths(service_file_path)
@@ -69,8 +78,21 @@ def full_system_initialization(service_file_path, service_name):
     
     service_logger.write_logs(f"System initialization completed for {service_name}", LOG_LEVEL.INFO)
     service_logger.write_logs(f"Application root path: {paths['APPLICATION_ROOT_PATH']}", LOG_LEVEL.DEBUG)
-    
-    return paths, service_logger
+
+    config_manager = ConfigManager.instance()
+    describe = config_manager.describe()
+    service_logger.write_logs(
+        f"Active deployment profile '{describe['profile']}' -> capacity {describe['capacity']}",
+        LOG_LEVEL.INFO,
+    )
+
+    storage_client = build_storage_client(config_manager.storage, logger=service_logger)
+    service_logger.write_logs(
+        f"Storage provider set to '{storage_client.provider}' bucket '{storage_client.frames_bucket}'",
+        LOG_LEVEL.INFO,
+    )
+
+    return paths, service_logger, storage_client
 
 def get_environment_config():
     """

@@ -18,10 +18,14 @@ import time
 
 def main():
     # Complete system initialization (paths, directories, Redis, logger)
-    paths,decision_logger = full_system_initialization("Decision_Service")
+    paths, decision_logger, storage_client = full_system_initialization("Decision_Service")
     decision_logger.write_logs(f"paths {paths}",LOG_LEVEL.INFO)
     # Create Action Decision Manager
-    action_decision_manager = ActionDecisionManager_Process(process_name="ActionDecisionManager",logger=decision_logger)
+    action_decision_manager = ActionDecisionManager_Process(
+        process_name="ActionDecisionManager",
+        logger=decision_logger,
+        storage_client=storage_client,
+    )
     
     decision_logger.write_logs("Starting Decision Service...", LOG_LEVEL.INFO)
     

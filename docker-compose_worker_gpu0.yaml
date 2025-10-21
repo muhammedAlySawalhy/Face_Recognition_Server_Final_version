@@ -25,6 +25,9 @@ services:
       - type: bind
         source: ${ROOT_PATH}/Models_Weights
         target: /app/Models_Weights
+      - type: bind
+        source: ${DATA_DIR}
+        target: /app/Data
     networks:
       - rmq_network
       - storage_network
@@ -60,6 +63,9 @@ services:
       - type: bind
         source: ${ROOT_PATH}/Models_Weights
         target: /app/Models_Weights
+      - type: bind
+        source: ${DATA_DIR}
+        target: /app/Data
     networks:
       - rmq_network
       - storage_network
@@ -96,8 +102,12 @@ services:
       - type: bind
         source: ${ROOT_PATH}/Models_Weights
         target: /app/Models_Weights
+      - type: bind
+        source: ${DATA_DIR}
+        target: /app/Data
     networks:
       - rmq_network
+      - storage_network
     restart: unless-stopped
     # healthcheck:
     #   test: [ "CMD", "nc", "-z", "rmq_Server", "5672" ]
@@ -131,8 +141,12 @@ services:
       - type: bind
         source: ${ROOT_PATH}/Models_Weights
         target: /app/Models_Weights
+      - type: bind
+        source: ${DATA_DIR}
+        target: /app/Data
     networks:
       - rmq_network
+      - storage_network
     restart: unless-stopped
     # healthcheck:
     #   test: [ "CMD", "nc", "-z", "rmq_Server", "5672" ]

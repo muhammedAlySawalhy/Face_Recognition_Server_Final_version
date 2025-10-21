@@ -34,10 +34,11 @@ def initialize_system_paths(service_file_path):
 
     __APP_DIRS_PATHS__ = dict()
     __APP_DIRS_PATHS__["APPLICATION_ROOT_PATH"] = root_path
-    __APP_DIRS_PATHS__["MODELS_WEIGHTS_ROOT_PATH"] = os.path.join(
-        root_path, "Models_Weights"
-    )
+    __APP_DIRS_PATHS__["MODELS_WEIGHTS_ROOT_PATH"] = os.path.join(root_path, "Models_Weights")
     __APP_DIRS_PATHS__["LOGS_ROOT_PATH"] = root_path
+    __APP_DIRS_PATHS__["USERS_DATABASE_ROOT_PATH"] = os.path.join(root_path, "Data", "Users_DataBase")
+    __APP_DIRS_PATHS__["ACTIONS_ROOT_PATH"] = os.path.join(root_path, "Data", "Actions")
+    __APP_DIRS_PATHS__["SERVER_DATA_ROOT_PATH"] = os.path.join(root_path, "Data", "Server_Data")
 
     # Set system namespace
     __SYSTEM_NAMESPACE__ = os.getenv(

@@ -17,6 +17,9 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['sharp'],
   },
+  compiler: {
+    styledComponents: true,
+  },
   async headers() {
     return [
       {

@@ -4,7 +4,8 @@ FROM nginx:alpine
 RUN apk add --no-cache gettext openssl ca-certificates && update-ca-certificates
 
 # Copy template & entrypoint
-COPY site.conf.template /etc/nginx/templates/site.conf.template
+# Provide a default template (overridden at runtime by mounted template)
+COPY config_templates/site.conf.template /etc/nginx/templates/site.conf.template
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

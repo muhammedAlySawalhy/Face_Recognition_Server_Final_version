@@ -4,7 +4,7 @@ import os
 import time
 import traceback
 import threading
-from common_utilities import Base_process, LOGGER,LOG_LEVEL,RedisHandler, Sync_RMQ
+from common_utilities import Base_process, LOGGER,LOG_LEVEL,RedisHandler, Sync_RMQ, StorageClient
 from .Save_Action_thread import SaveAction_Thread
 from .FastAPIHandler import FastAPIHandler
 from .FileOperationsHandler import FileOperationsHandler
@@ -22,6 +22,7 @@ class Server_Manager(Base_process):
         gui_backend_ip: str = "0.0.0.0",
         gui_backend_port: int = 6000,
         logger = None,
+        storage_client: StorageClient | None = None,
         **kwargs
     ):
         """
@@ -51,6 +52,8 @@ class Server_Manager(Base_process):
         else:
             self.__redis_data=RedisHandler(db=0)
         
+        self.storage_client = storage_client or kwargs.get("storage_client")
+
         # Initialize RMQ handler for saved_actions
         self.__rmq_handler = Sync_RMQ(logger=self.logs)
         # Configure RMQ for better memory management
@@ -65,7 +68,10 @@ class Server_Manager(Base_process):
         self.__gui_backend_port = gui_backend_port
         
         # Initialize SaveAction_Thread
-        self.save_action_thread: SaveAction_Thread = SaveAction_Thread("SaveAction_Thread")
+        self.save_action_thread: SaveAction_Thread = SaveAction_Thread(
+            "SaveAction_Thread",
+            storage_client=self.storage_client,
+        )
         
         # Initialize FastAPI handler thread
         self.fastapi_handler:FastAPIHandler = FastAPIHandler(
@@ -177,11 +183,22 @@ class Server_Manager(Base_process):
                     user_name = payload.get("user_name")
                     action_reason = payload.get("Action_Reason")
                     action_image = payload.get("Action_image")
+                    action_object_key = payload.get("action_image_object_key")
+                    action_bucket = payload.get("action_image_bucket")
                     
-                    if user_name and action_reason and action_image is not None:
+                    if user_name and action_reason:
                         # Use the SaveAction_Thread for saving
-                        self.save_action_thread.add_to_queue(user_name, action_reason, action_image)
-                        self.logs.write_logs(f"Queued action for saving for user {user_name}", LOG_LEVEL.DEBUG)
+                        self.save_action_thread.add_to_queue(
+                            user_name,
+                            action_reason,
+                            action_image,
+                            action_object_key,
+                            action_bucket,
+                        )
+                        self.logs.write_logs(
+                            f"Queued action for saving for user {user_name} (object_key={action_object_key})",
+                            LOG_LEVEL.DEBUG,
+                        )
                     else:
                         self.logs.write_logs(f"Invalid saved_action payload: missing required fields", LOG_LEVEL.WARNING)
                         

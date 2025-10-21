@@ -254,6 +254,9 @@ class Server(Base_process):
                 self.logs.write_logs(
                     f"Connection closed while sending to {client_name}", LOG_LEVEL.WARNING
                 )
+            except RequeueMessage as requeue_exc:
+                # Allow Async_RMQ to requeue the message by re-raising
+                raise requeue_exc
             except Exception as exc:  # pylint: disable=broad-except
                 error_details = traceback.format_exc()
                 self.logs.write_logs(
@@ -285,7 +288,6 @@ class Server(Base_process):
         if ref_image is None:
             self.logs.write_logs(f"No reference image for {client_name}", LOG_LEVEL.WARNING)
             return False, None
-        client_metadata["ref_image"] = ref_image
         self.ws[client_name] = websocket
         return True, client_metadata
 

@@ -29,11 +29,13 @@ import os
 import random
 import time
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from locust import User, between, events, task
 from websocket import create_connection
+from PIL import Image
 
 
 def _str_to_bool(value: Optional[str], default: bool = False) -> bool:
@@ -96,6 +98,21 @@ class SamplePayload:
         return context
 
 
+def _encode_image_to_base64(image_path: Path, size: Tuple[int, int] = (240, 240)) -> str:
+    """Load image, convert to RGB, resize, and return base64 encoded JPEG."""
+    with Image.open(image_path) as img:
+        img = img.convert("RGB")
+        if img.size != size:
+            try:
+                resample = Image.Resampling.LANCZOS  # Pillow >=9.1
+            except AttributeError:
+                resample = Image.LANCZOS  # Older Pillow fallback
+            img = img.resize(size, resample)
+        buffer = BytesIO()
+        img.save(buffer, format="JPEG", quality=95)
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
 def _discover_candidate_paths(
     dataset_dir: Path, extensions: Iterable[str]
 ) -> List[Path]:
@@ -151,7 +168,7 @@ def _load_from_manifest(
         if not image_path.exists():
             continue
 
-        encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+        encoded = _encode_image_to_base64(image_path)
         tags = tuple(str(tag) for tag in (entry.get("tags") or [entry_label]))
         payloads.append(
             SamplePayload(
@@ -184,7 +201,7 @@ def _load_from_directory(
         user_name, label = _derive_user_and_label(dataset_dir, image_path)
         if label_set and label.lower() not in label_set:
             continue
-        encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+        encoded = _encode_image_to_base64(image_path)
         payloads.append(
             SamplePayload(
                 user_name=user_name,

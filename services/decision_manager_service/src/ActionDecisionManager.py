@@ -13,21 +13,22 @@ class ActionDecisionManager:
     def __face_decide_action(self, models_results: Dict[str, str]) -> Dict[str, str]:
         # Initialize the action dictionary with default values
         __action = {"action": Action.NO_ACTION.value, "reason": Reason.EMPTY_REASON.value}
+        face_bbox = models_results.get("face_bbox")
         # Check if no face is detected
-        if models_results["face_bbox"] is None:
+        if face_bbox is None:
             __action.update({"action": Action.ACTION_LOCK_SCREEN.value, "reason": Reason.REASON_NO_FACE.value})
             return __action
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        image = models_results["user_image"]  # Extract the face image
-        x1, y1, x2, y2 = models_results["face_bbox"]
+        image = models_results.get("user_image")  # Extract the face image if available
+        x1, y1, x2, y2 = face_bbox
         # Check if the detected face is marked as a spoof
-        if models_results["check_spoof"]:
-            cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+        if models_results.get("check_spoof"):
+            if image is not None:
+                cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
             __action = {"action": Action.ACTION_SIGN_OUT.value, "reason": Reason.REASON_SPOOF_IMAGE.value}
             return __action
         # Check if the predicted username does not match the actual username
-        if not models_results["check_client"]:
-            #cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        if not models_results.get("check_client"):
             __action = {"action": Action.ACTION_LOCK_SCREEN.value, "reason": Reason.REASON_WRONG_USER.value}
             return __action
         return __action
@@ -36,9 +37,11 @@ class ActionDecisionManager:
         __action = {"action": Action.NO_ACTION.value, "reason": Reason.EMPTY_REASON.value}
         image = models_results.get("user_image")  # Get the face image to draw on
         # Check if a phone is detected
-        if models_results["phone_bbox"] is not None:
-            x1, y1, x2, y2 = models_results["phone_bbox"]
-            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red box for phone
+        phone_bbox = models_results.get("phone_bbox")
+        if phone_bbox is not None:
+            x1, y1, x2, y2 = phone_bbox
+            if image is not None:
+                cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red box for phone
             # Update action to sign out due to phone detection
             __action = {"action": Action.ACTION_SIGN_OUT.value, "reason": Reason.REASON_PHONE_DETECTION.value}
         return __action
@@ -67,4 +70,3 @@ class ActionDecisionManager:
         else:
             return self.face_decide_action(models_results)
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-

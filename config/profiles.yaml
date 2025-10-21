@@ -113,16 +113,16 @@ profiles:
       total_gpus: 2
       gpu_memory_gb: 48
     capacity:
-      designed_clients: 220
-      hard_limit_clients: 256
+      designed_clients: 300
+      hard_limit_clients: 320
     pipeline:
-      pipelines_per_server: 6
-      pipelines_per_gpu: 3
-      max_clients_per_pipeline: 48
+      pipelines_per_server: 16
+      pipelines_per_gpu: 8
+      max_clients_per_pipeline: 20
     rate_limiter:
-      max_clients: 256
-      window_ms: 5500
-      cleanup_ms: 5500
+      max_clients: 320
+      window_ms: 5000
+      cleanup_ms: 5000
     storage:
       provider: minio
       frames_bucket: face-frames
@@ -130,8 +130,8 @@ profiles:
     services:
       gateway:
         websocket:
-          max_queue: 3200
-          semaphore_size: 48
+          max_queue: 4200
+          semaphore_size: 60
       pipelines_manager:
         monitor_gpu_utilisation: true
       pipeline_worker:
