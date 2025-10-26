@@ -246,13 +246,17 @@ class Server(Base_process):
                         )
                     else:
                         self.logs.write_logs(
-                            f"Client {client_name} not connected or invalid message",
+                            f"Client {client_name} not connected or invalid message, state {self.ws.keys()}",
                             LOG_LEVEL.WARNING,
                         )
                         raise RequeueMessage(f"Client {client_name} not connected; requeueing action")
             except ConnectionClosed:
                 self.logs.write_logs(
                     f"Connection closed while sending to {client_name}", LOG_LEVEL.WARNING
+                )
+                self.ws.pop(client_name, None)
+                raise RequeueMessage(
+                    f"Connection to {client_name} closed mid-send; requeueing action"
                 )
             except RequeueMessage as requeue_exc:
                 # Allow Async_RMQ to requeue the message by re-raising
@@ -307,6 +311,20 @@ class Server(Base_process):
     async def handle_connection(self, websocket: websockets.asyncio.server.ServerConnection):
         client_name = ""
         await self.connection_semaphore.acquire()
+        if self._rate_limiter_manager and not self._rate_limiter_manager.allow_request(client_name):
+            await websocket.send(
+                json.dumps(
+                    {
+                        "action": Action.ACTION_ERROR.value,
+                        "reason": Reason.EMPTY_REASON.value,
+                    }
+                )
+            )
+            await websocket.close(4003)
+            self.logs.write_logs(
+                f"Rate limit exceeded for client {client_name}", LOG_LEVEL.WARNING
+            )
+            return
         try:
             while not self.stop_process:
                 status = self._read_status_snapshot()
@@ -335,20 +353,7 @@ class Server(Base_process):
                 if not await self.client_checks.client_is_available(websocket, client_name, self.activate_clients):
                     break
 
-                if self._rate_limiter_manager and not self._rate_limiter_manager.allow_request(client_name):
-                    await websocket.send(
-                        json.dumps(
-                            {
-                                "action": Action.ACTION_ERROR.value,
-                                "reason": Reason.REASON_RATE_LIMIT_EXCEEDED.value,
-                            }
-                        )
-                    )
-                    await websocket.close(4003)
-                    self.logs.write_logs(
-                        f"Rate limit exceeded for client {client_name}", LOG_LEVEL.WARNING
-                    )
-                    break
+              
 
                 self.logs.write_logs(f"user {client_name} sent data !!", LOG_LEVEL.INFO)
                 user_image = encoded64image2cv2(data.get("image"))

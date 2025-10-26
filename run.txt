@@ -28,3 +28,4 @@ docker compose -p fr_workers_gpu0 -f docker-compose_worker_gpu0.yaml up -d
 docker compose -p fr_workers_gpu1 -f docker-compose_worker_gpu1.yaml up -d   # only if you use GPU1
 
 locust -f tests/load/locust_ws.py --headless --users 80 --spawn-rate 1 --run-time 2h
+docker save fr-server-pipeline_worker_service:latest -o pipeline_worker_service.tar

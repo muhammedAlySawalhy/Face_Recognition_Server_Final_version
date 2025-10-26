@@ -11,4 +11,5 @@ test/
 *.zip
 *.env
 *.log
+*.tar
 certs/

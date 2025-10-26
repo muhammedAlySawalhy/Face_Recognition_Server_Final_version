@@ -19,6 +19,8 @@ Environment overrides:
   LOCUST_WS_PORT                Gateway port (default 8000)
   LOCUST_WS_PATH                Gateway endpoint (default /ws)
   LOCUST_WS_IMAGE_EXTS          Legacy glob extensions for directory mode (default jpg,jpeg,png)
+  LOCUST_WS_RECV_TIMEOUT        Seconds to wait for gateway responses (default 15.0)
+  LOCUST_WS_DRAIN_ALL_MESSAGES  "true" to read all pending responses before returning to Locust
 """
 
 from __future__ import annotations
@@ -34,7 +36,11 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from locust import User, between, events, task
-from websocket import create_connection
+from websocket import (
+    WebSocketConnectionClosedException,
+    WebSocketTimeoutException,
+    create_connection,
+)
 from PIL import Image
 
 
@@ -58,6 +64,8 @@ WAIT_MAX = _parse_float(os.getenv("LOCUST_WS_WAIT_MAX"), 3.0)
 if WAIT_MAX < WAIT_MIN:
     WAIT_MIN, WAIT_MAX = WAIT_MAX, WAIT_MIN
 
+RECV_TIMEOUT = _parse_float(os.getenv("LOCUST_WS_RECV_TIMEOUT"), 15.0)
+DRAIN_ALL_MESSAGES = _str_to_bool(os.getenv("LOCUST_WS_DRAIN_ALL_MESSAGES"), False)
 LABEL_EXPECTATIONS: Dict[str, Optional[str]] = {
     "genuine": "allow",
     "spoof": "deny",
@@ -303,13 +311,22 @@ def _load_samples() -> List[SamplePayload]:
         else []
     )
 
+    extensions = os.getenv("LOCUST_WS_IMAGE_EXTS", "jpg,jpeg,png").split(",")
+    payloads: List[SamplePayload] = []
     if manifest_path.exists():
-        payloads = _load_from_manifest(
-            manifest_path, dataset_dir, task_filter, label_filter
+        payloads.extend(
+            _load_from_manifest(manifest_path, dataset_dir, task_filter, label_filter)
         )
     else:
-        extensions = os.getenv("LOCUST_WS_IMAGE_EXTS", "jpg,jpeg,png").split(",")
-        payloads = _load_from_directory(dataset_dir, extensions, label_filter)
+        payloads.extend(_load_from_directory(dataset_dir, extensions, label_filter))
+
+    # Enrich manifest-driven payloads with any additional samples found on disk so that
+    # load tests can exercise every available user directory (e.g. other_user, sample_user).
+    seen_sources = {str(sample.source) for sample in payloads}
+    for extra_sample in _load_from_directory(dataset_dir, extensions, label_filter):
+        if str(extra_sample.source) not in seen_sources:
+            payloads.append(extra_sample)
+            seen_sources.add(str(extra_sample.source))
 
     if not payloads:
         raise RuntimeError(f"No sample images available in {dataset_dir}")
@@ -338,6 +355,76 @@ class GatewayWebsocketUser(User):
         ws_port = os.getenv("LOCUST_WS_PORT", "8000")
         ws_path = os.getenv("LOCUST_WS_PATH", "/ws")
         self.ws_url = f"ws://{ws_host}:{ws_port}{ws_path}"
+        self.ws = None
+        self._ensure_connection()
+
+    def on_stop(self) -> None:
+        self._reset_connection()
+
+    def _ensure_connection(self) -> None:
+        if self.ws is not None:
+            return
+        connect_start = time.perf_counter()
+        try:
+            self.ws = create_connection(self.ws_url, timeout=10)
+            self.ws.settimeout(RECV_TIMEOUT)
+        except Exception as exc:
+            events.request.fire(
+                request_type="WS",
+                name="connect",
+                response_time=(time.perf_counter() - connect_start) * 1000,
+                response_length=0,
+                context={"ws_url": self.ws_url},
+                exception=exc,
+            )
+            self._reset_connection()
+            raise
+        else:
+            events.request.fire(
+                request_type="WS",
+                name="connect",
+                response_time=(time.perf_counter() - connect_start) * 1000,
+                response_length=0,
+                context={"ws_url": self.ws_url},
+            )
+
+    def _reset_connection(self) -> None:
+        if self.ws is None:
+            return
+        try:
+            self.ws.close()
+        except Exception:
+            pass
+        finally:
+            self.ws = None
+
+    def _drain_gateway_messages(self) -> List[str]:
+        if self.ws is None:
+            return []
+        messages: List[str] = []
+        deadline = time.perf_counter() + RECV_TIMEOUT
+        while True:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                break
+            try:
+                self.ws.settimeout(max(0.1, remaining))
+                message = self.ws.recv()
+            except WebSocketTimeoutException:
+                break
+            except WebSocketConnectionClosedException:
+                self._reset_connection()
+                raise
+            except Exception:
+                self._reset_connection()
+                raise
+            else:
+                messages.append(message)
+                if not DRAIN_ALL_MESSAGES:
+                    break
+        if self.ws is not None:
+            self.ws.settimeout(RECV_TIMEOUT)
+        return messages
 
     @task
     def send_image(self) -> None:
@@ -351,20 +438,18 @@ class GatewayWebsocketUser(User):
             "context": sample.context(),
         }
         start_time = time.perf_counter()
-        ws = None
         try:
-            ws = create_connection(self.ws_url, timeout=10)
-            ws.send(json.dumps(payload))
+            self._ensure_connection()
+            assert self.ws is not None  # for type checkers
+            self.ws.send(json.dumps(payload))
+            responses = self._drain_gateway_messages()
             request_meta["response_length"] = len(payload["image"])
             request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
+            if responses:
+                request_meta["context"]["gateway_responses"] = responses
             events.request.fire(**request_meta)
         except Exception as exc:  # Locust records the failure
+            self._reset_connection()
             request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
             request_meta["exception"] = exc
             events.request.fire(**request_meta)
-        finally:
-            if ws is not None:
-                try:
-                    ws.close()
-                except Exception:
-                    pass

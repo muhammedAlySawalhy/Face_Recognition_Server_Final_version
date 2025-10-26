@@ -147,10 +147,8 @@ class FaceDetectionRecognition:
         Returns:
             dict: A dictionary containing face detection and recognition results.
         """
-        image=Clients_data["user_image"]
-        client_name=Clients_data["client_name"]
-        image=crop_image_center(Clients_data["user_image"],crop_width=640,crop_height=480)
-        Clients_data["user_image"]=image
+        image = Clients_data.get("user_image")
+        client_name = Clients_data.get("client_name", "unknown")
         # Initialize result dictionary for pipeline results
         pipeline_result = {
             "face_bbox":None,
@@ -159,21 +157,45 @@ class FaceDetectionRecognition:
             "check_spoof": None,
             "detection_success": False,
         }
+        # Validate the incoming frame before any processing to avoid NoneType errors.
+        if image is None:
+            self.logs.write_logs(
+                f"{client_name}-Received empty frame payload", LOG_LEVEL.WARNING
+            )
+            return pipeline_result
+        if not isinstance(image, np.ndarray):
+            self.logs.write_logs(
+                f"{client_name}-Frame payload is not a numpy array ({type(image)})",
+                LOG_LEVEL.WARNING,
+            )
+            return pipeline_result
+        if image.size == 0:
+            self.logs.write_logs(
+                f"{client_name}-Received frame with zero size", LOG_LEVEL.WARNING
+            )
+            return pipeline_result
+        image = crop_image_center(image, crop_width=640, crop_height=480)
+        if image is None or image.size == 0:
+            self.logs.write_logs(
+                f"{client_name}-Cropping produced an empty frame", LOG_LEVEL.WARNING
+            )
+            return pipeline_result
+        Clients_data["user_image"]=image
         detection_result = self.Detect_Faces.detect_face(image)
         # Proceed with face recognition if a face was detected.
         face_image=detection_result["face_image"]
         if face_image is not None:
             pipeline_result["detection_success"] = True
             pipeline_result.update(detection_result)
-        face_bbox=detection_result["face_bbox"]
-        checking_result = self.__check_client(
-            client_name=client_name,
-            face_image=face_image,
-            face_bbox=face_bbox
-            )
-        pipeline_result.update(checking_result)
+            face_bbox=detection_result["face_bbox"]
+            checking_result = self.__check_client(
+                client_name=client_name,
+                face_image=face_image,
+                face_bbox=face_bbox
+                )
+            pipeline_result.update(checking_result)
         return pipeline_result
-#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def _get_reference_embedding(self, client_name: str) -> Optional[np.ndarray]:
         paths = get_paths()
         image_path = os.path.join(
