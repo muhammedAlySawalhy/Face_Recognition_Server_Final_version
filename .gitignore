@@ -12,4 +12,5 @@ test/
 *.env
 *.log
 *.tar
+*.tar.*
 certs/
