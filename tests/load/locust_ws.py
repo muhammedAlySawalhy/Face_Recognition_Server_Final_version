@@ -447,7 +447,7 @@ class GatewayWebsocketUser(User):
     def on_start(self) -> None:
         self.payloads = _load_samples()
         ws_host = os.getenv("LOCUST_WS_HOST", "127.0.0.1")
-        ws_port = os.getenv("LOCUST_WS_PORT", "8001")
+        ws_port = os.getenv("LOCUST_WS_PORT", "8000")
         ws_path = os.getenv("LOCUST_WS_PATH", "/ws")
         self.ws_url = f"ws://{ws_host}:{ws_port}{ws_path}"
         self.ws_connections: Dict[str, WebSocket] = {}

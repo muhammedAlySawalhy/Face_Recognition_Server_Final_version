@@ -1,9 +1,12 @@
+import threading
+from typing import List, Union
+
 import torch
 import ultralytics
 import ultralytics.engine
 import ultralytics.engine.results
-from typing import Union,List
-from common_utilities import LOGGER,LOG_LEVEL
+
+from common_utilities import LOGGER, LOG_LEVEL
 class ObjectDetection:
     def __init__(
         self,
@@ -24,9 +27,16 @@ class ObjectDetection:
             self.logs = LOGGER(None)
         #_________________________________________________________________________#
         self.class_number=class_number
-        self.device = Model_device
+        self.device = torch.device(Model_device) if not isinstance(Model_device, torch.device) else Model_device
         self.confidence_threshold:float=float(confidence_threshold)/100.0 if int(confidence_threshold)<100 else 1.0
-        self.detection_model = ultralytics.YOLO(model_weights_path, verbose=False).to(self.device)
+        self._inference_lock = threading.Lock()
+        self.detection_model = (
+            ultralytics.YOLO(model_weights_path, verbose=False)
+            .to(self.device, dtype=torch.float32)
+        )
+        # Explicitly keep inference in FP32 to avoid CUDA misaligned address faults.
+        self.detection_model.overrides["half"] = False
+        self.detection_model.model.float()
         self.__cache_model()
 
     def __del__(self):
@@ -34,13 +44,14 @@ class ObjectDetection:
             del self.detection_model
 
     def __cache_model(self):
-        dummy_input = torch.randn(1, 3, 224, 224) / 255
-        dummy_input.to(self.device)
-        _ = self.detection_model(dummy_input,verbose=False)
+        with self._inference_lock:
+            dummy_input = torch.randn(1, 3, 224, 224, device=self.device, dtype=torch.float32) / 255
+            _ = self.detection_model(dummy_input, verbose=False)
         self.logs.write_logs("'ObjectDetection' Model is Cached !!",LOG_LEVEL.INFO)
 
     def detect_object(self, image):
-        results: List[ultralytics.engine.results.Results] = self.detection_model(image, verbose=False)
+        with self._inference_lock:
+            results: List[ultralytics.engine.results.Results] = self.detection_model(image, verbose=False)
         phone_data = {"phone_bbox": None, "phone_confidence": None}
         for cls_result in results[0]:
             cls_boxes = cls_result.boxes

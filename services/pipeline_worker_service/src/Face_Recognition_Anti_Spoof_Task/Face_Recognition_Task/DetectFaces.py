@@ -32,7 +32,13 @@ class DetectFaces:
         self.confidence_threshold = max(0.0, min(1.0, confidence))
         self._inference_lock = threading.Lock()
         # Load the YOLO face detection model with the specified weights.
-        self.detection_model:ultralytics.YOLO = ultralytics.YOLO(model_weights_path, verbose=False).to(self.device)
+        self.detection_model:ultralytics.YOLO = (
+            ultralytics.YOLO(model_weights_path, verbose=False)
+            .to(self.device, dtype=torch.float32)
+        )
+        # Explicitly disable mixed-precision to avoid CUDA misaligned address faults.
+        self.detection_model.overrides["half"] = False
+        self.detection_model.model.float()
         self.__cache_model()
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def __del__(self):
