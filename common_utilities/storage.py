@@ -59,7 +59,8 @@ class StorageClient:
         )
         self._ensure_bucket(settings.frames_bucket)
         # Background cleanup scheduler
-        self._cleanup_interval = int(os.getenv("STORAGE_CLEANUP_INTERVAL_SECONDS", "3600"))
+        # Periodic cleanup disabled by default because frames are removed immediately after processing.
+        self._cleanup_interval = int(os.getenv("STORAGE_CLEANUP_INTERVAL_SECONDS", "0"))
         self._cleanup_age_hours = int(os.getenv("STORAGE_CLEANUP_MAX_AGE_HOURS", "2"))
         self._cleanup_max_objects = int(os.getenv("STORAGE_CLEANUP_MAX_OBJECTS", "1000"))
         self._cleanup_stop_event = threading.Event()

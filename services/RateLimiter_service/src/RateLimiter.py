@@ -63,13 +63,32 @@ class RateLimiter(AbstractRatelimiter):
             self._cleanup_stop.set()
         self.executor.shutdown(wait=True)
 
+    def _is_client_active(self, client_id: str, current_time: int) -> bool:
+        window_start = self.client_window_start.get(client_id)
+        if window_start is None:
+            return False
+        last_seen = self.client_last_seen.get(client_id, window_start)
+        return current_time - max(window_start, last_seen) < self.window_size
+
     def allowRequest(self, client_id: str) -> bool:
         current_time = int(time() * 1000)
+
+        client_is_active = self._is_client_active(client_id, current_time)
+        active_clients = sum(
+            1 for cid in self.client_counts.keys() if self._is_client_active(cid, current_time)
+        )
+
+        if not client_is_active and active_clients >= self.max_clients:
+            self.logger.write_logs(
+                f"Request denied for client {client_id}. Active clients this window: {active_clients}",
+                LOG_LEVEL.WARNING,
+            )
+            return False
 
         current_count = self.client_counts.get(client_id, 0)
         window_start = self.client_window_start.get(client_id)
 
-        if window_start is None or current_time - window_start >= self.window_size:
+        if window_start is None or not client_is_active:
             window_start = current_time
             current_count = 0
 
@@ -77,19 +96,9 @@ class RateLimiter(AbstractRatelimiter):
         self.client_window_start[client_id] = window_start
         self.client_last_seen[client_id] = current_time
 
-        total_requests = sum(self.client_counts.values())
-
-        if total_requests < self.max_clients:
-            current_count += 1
-            self.client_counts[client_id] = current_count
-            self.logger.write_logs(
-                f"Request allowed for client {client_id}. Current count: {(current_count, window_start // 1000)}",
-                LOG_LEVEL.DEBUG,
-            )
-            return True
-
+        self.client_counts[client_id] = current_count + 1
         self.logger.write_logs(
-            f"Request denied for client {client_id}. Current count: {(self.client_counts.get(client_id, 0), window_start // 1000 if window_start else 0)}",
-            LOG_LEVEL.WARNING,
+            f"Request allowed for client {client_id}. Active clients this window: {len(self.client_counts)}",
+            LOG_LEVEL.DEBUG,
         )
-        return False
+        return True

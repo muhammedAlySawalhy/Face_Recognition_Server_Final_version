@@ -61,7 +61,7 @@ def __get_available_users() -> Set[str]:
     return db
 
 
-def get_available_users()-> Tuple[Set[str],int]:
+def get_available_users() -> Set[str]:
     """Auto-refreshes cache if new data is detected."""
     if __has_new_data():
         __get_available_users.cache_clear()

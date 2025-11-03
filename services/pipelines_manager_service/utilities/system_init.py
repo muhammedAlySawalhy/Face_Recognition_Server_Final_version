@@ -1,10 +1,4 @@
 #!/usr/bin/env python3.10
-"""
-Shared System Initialization Module
-Handles path setup, directory creation, and environment configuration
-that was originally in main.py
-"""
-
 import os
 
 from common_utilities import (
@@ -13,7 +7,9 @@ from common_utilities import (
     LOG_LEVEL,
     set_namespace,
     set_paths,
+    get_namespace,
 )
+from common_utilities.log_maintenance import start_log_cleanup_worker_from_paths
 
 try:
     from common_utilities import ConfigManager  # type: ignore
@@ -22,41 +18,27 @@ except ImportError:  # pragma: no cover - fallback when ConfigManager not bundle
 
 
 def initialize_system_paths(service_file_path):
-    """
-    Initialize system paths based on the service location
-    Returns the paths dictionary
-    """
-    # Calculate root path from service location (go up to main directory)
     root_path = get_root_path(service_file_path, "pipelines_manager.py")
 
     __APP_DIRS_PATHS__ = dict()
     __APP_DIRS_PATHS__["APPLICATION_ROOT_PATH"] = root_path
     __APP_DIRS_PATHS__["LOGS_ROOT_PATH"] = root_path
 
-    # Set system namespace
     __SYSTEM_NAMESPACE__ = os.getenv(
         "NAMESPACE", default=os.getenv("HOSTNAME", default=None)
     )
 
-    # Apply paths and namespace globally
     set_paths(__APP_DIRS_PATHS__)
     set_namespace(__SYSTEM_NAMESPACE__)
 
-    # Change to root directory
     os.chdir(root_path)
 
     return __APP_DIRS_PATHS__
 
 
 def full_system_initialization(service_file_path, service_name):
-    """
-    Complete system initialization for a microservice
-    Returns: (paths_dict, models_parameters, redis_clients_status, redis_clients_data, service_logger)
-    """
-    # Initialize paths
     paths = initialize_system_paths(service_file_path)
 
-    # Create service logger
     service_logger = LOGGER(service_name)
     service_logger.create_Stream_logger(log_levels=["INFO", "ERROR", "WARNING"])
     service_logger.create_File_logger(
@@ -68,6 +50,10 @@ def full_system_initialization(service_file_path, service_name):
     )
     service_logger.write_logs(
         f"Application root path: {paths['APPLICATION_ROOT_PATH']}", LOG_LEVEL.DEBUG
+    )
+    start_log_cleanup_worker_from_paths(
+        paths,
+        namespace=get_namespace(),
     )
 
     config_manager = None
@@ -95,9 +81,6 @@ def full_system_initialization(service_file_path, service_name):
 
 
 def get_environment_config():
-    """
-    Get environment configuration with defaults
-    """
     if ConfigManager is not None:
         config_manager = ConfigManager.instance()
         pipeline_cfg = config_manager.pipeline
@@ -113,7 +96,6 @@ def get_environment_config():
             "CONFIG_PROFILE": config_manager.profile_name,
         }
 
-    # Fallback to environment overrides when ConfigManager is unavailable
     max_clients = int(os.getenv("PIPELINE_MAX_CLIENTS", os.getenv("MAX_CLIENTS_PER_PIPELINE", 10)))
     pipelines_per_server = int(os.getenv("PIPELINES_PER_SERVER", os.getenv("MAX_PIPELINE", 4)))
     total_pipelines = int(os.getenv("PIPELINES_TOTAL", pipelines_per_server))

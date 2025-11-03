@@ -1,9 +1,11 @@
 #!/usr/bin/env python3.10
 
-from typing import List,Literal
-from enum import Enum
+import os
 import logging
-from  .files_handler import create_logfile
+from enum import Enum
+from typing import List, Literal
+
+from .files_handler import create_logfile
 
 class LOG_LEVEL(Enum):
     DEBUG = 0
@@ -80,17 +82,54 @@ class LOGGER:
         else:
             self.__logger=None
 
+    def _ensure_file_handlers(self):
+        if not self.__logger:
+            return
+
+        for handler in self.__logger.handlers:
+            if not isinstance(handler, logging.FileHandler):
+                continue
+            base_filename = getattr(handler, "baseFilename", None)
+            if not base_filename:
+                continue
+
+            needs_reopen = False
+            if not os.path.exists(base_filename):
+                needs_reopen = True
+            else:
+                stream = getattr(handler, "stream", None)
+                if stream is None or stream.closed:
+                    needs_reopen = True
+
+            if not needs_reopen:
+                continue
+
+            handler.acquire()
+            try:
+                handler.close()
+                try:
+                    handler.stream = handler._open()
+                except OSError:
+                    handler.stream = None
+                    raise
+            finally:
+                handler.release()
+
     def create_File_logger(self,logs_name:str,log_levels: List[Literal["DEBUG", "INFO", "ERROR", "CRITICAL", "WARNING"]]):
         try:
             file_path=create_logfile(logs_name)
-            file_logger=logging.FileHandler(file_path)
+            file_logger=logging.FileHandler(file_path, mode="a")
             logger_formate_file=File__ColoredFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
             file_logger.setFormatter(logger_formate_file)
             logging_filter = loggingFilter(log_levels)
             file_logger.addFilter(logging_filter)
             self.__logger.addHandler(file_logger)
+            # Ensure the handler opens the target file immediately so permission errors surface here.
+            self._ensure_file_handlers()
         except ValueError as e:
             raise ValueError(f"Failed to create log file: {e}")
+        except OSError as e:
+            raise Exception(f"An error occurred while creating the file logger: {e}")
         except Exception as e:
             raise Exception(f"An error occurred while creating the file logger: {e}")
 
@@ -104,6 +143,10 @@ class LOGGER:
     
     def write_logs(self,logs_message,logs_level:LOG_LEVEL):
         if self.__logger:
+            try:
+                self._ensure_file_handlers()
+            except Exception:
+                pass
             if logs_level==LOG_LEVEL.DEBUG:
                 self.__logger.debug(logs_message)
             elif logs_level==LOG_LEVEL.INFO:
@@ -116,4 +159,3 @@ class LOGGER:
                 self.__logger.warning(logs_message)
             else:
                 raise ValueError()
-

@@ -15,7 +15,7 @@ class ClientChecks:
         self,
         websocket: websockets.asyncio.server.ServerConnection,
         client_name: str,
-        paused_clients: set,
+        paused_clients: set[str],
     ) -> bool:
         if client_name in paused_clients:
             await websocket.send(
@@ -34,7 +34,7 @@ class ClientChecks:
         self,
         websocket: websockets.asyncio.server.ServerConnection,
         client_name: str,
-        blocked_clients: set,
+        blocked_clients: set[str],
     ) -> bool:
         if client_name in blocked_clients:
             await websocket.send(
@@ -56,11 +56,11 @@ class ClientChecks:
         self,
         websocket: websockets.asyncio.server.ServerConnection,
         client_name: str,
-        active_clients: set) -> bool:
-        if client_name in list(get_available_users()):
-            # check active_clients
+        active_clients: set[str],
+    ) -> bool:
+        available_clients = get_available_users()
+        if client_name in available_clients:
             await self.add_to_active_clients(client_name, active_clients)
-            #######################################
             return True
         else:
             await websocket.send(
@@ -78,13 +78,8 @@ class ClientChecks:
             return False
 
     # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    async def add_to_active_clients(
-        self, client_name: str, active_clients: list | set):
+    async def add_to_active_clients(self, client_name: str, active_clients: set[str]):
         if client_name not in active_clients:
-            if isinstance(active_clients, set):
-                active_clients.add(client_name)
-            else:
-                active_clients.append(client_name)
+            active_clients.add(client_name)
 
 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-

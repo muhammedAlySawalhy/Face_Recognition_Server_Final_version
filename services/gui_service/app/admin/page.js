@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { FiGrid, FiUserCheck, FiUsers, FiMonitor, FiSettings, FiCamera, FiActivity } from "react-icons/fi";
+import { FiGrid, FiUserCheck, FiUsers, FiSettings, FiCamera, FiActivity } from "react-icons/fi";
 import {
   Box,
   Button,
@@ -141,7 +141,6 @@ function AdminUsersManager() {
     "tab_dashboard",
     "tab_available_users",
     "tab_users",
-    "tab_monitoring",
     "tab_actions",
     "tab_settings",
     "tab_take_photo"
@@ -1006,10 +1005,6 @@ function AdminPageContent({ activeTab, sidebarSections }) {
                   actionLoading={actionLoading}
                 />
               );
-            case "Monitoring":
-              return (
-                <MonitoringSection />
-              );
             case "Settings":
               return (
                 <Box color="white" py={10}>
@@ -1076,7 +1071,6 @@ export default function AdminPage() {
     { label: "Dashboard", icon: <FiGrid size={24} color="#00E5FF" />, tabPermission: "tab_dashboard" },
     { label: "Available Users", icon: <FiUserCheck size={24} color="#00E5FF" />, tabPermission: "tab_available_users" },
     { label: "Users", icon: <FiUsers size={24} color="#00E5FF" />, tabPermission: "tab_users" },
-    { label: "Monitoring", icon: <FiMonitor size={24} color="#00E5FF" />, tabPermission: "tab_monitoring" },
     { label: "Actions", icon: <FiActivity size={24} color="#00E5FF" />, href: "/admin/actions", tabPermission: "tab_actions" },
     { label: "Settings", icon: <FiSettings size={24} color="#00E5FF" />, tabPermission: "tab_settings" },
     { label: "Take Photo", icon: <FiCamera size={24} color="#00E5FF" />, href: "/result-photo", tabPermission: "tab_take_photo" },
@@ -1172,7 +1166,6 @@ export default function AdminPage() {
 
 // SidebarNavItem component for sidebar navigation
 import { useBreakpointValue } from "@chakra-ui/react";
-import MonitoringSection from "../components/MonitoringSection";
 import Dashboard from "../components/Dashboard";
 import Users from "../components/Users";
 import ClientCard, { ApprovedUserCard, ApprovedUsersSection } from "../components/ClientCard";

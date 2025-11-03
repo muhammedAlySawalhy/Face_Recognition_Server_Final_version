@@ -51,7 +51,8 @@ class RecognitionFace:
         face_image: np.ndarray | None = None,
         *,
         ref_embedding: np.ndarray | None = None,
-    ) -> bool:
+        return_details: bool = False,
+    ):
         """
         Compare an incoming face crop against a reference image or a precomputed embedding.
 
@@ -60,6 +61,8 @@ class RecognitionFace:
         if face_image is None:
             raise ValueError("face_image is required for recognition")
         __check = self.__verify_face(face_image, ref_image, ref_embedding=ref_embedding)
+        if return_details:
+            return __check
         return __check["verified"]
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def __recognition_models(self,model_name:str)-> Union[IResNet,VggFace,InceptionResnetV1]:

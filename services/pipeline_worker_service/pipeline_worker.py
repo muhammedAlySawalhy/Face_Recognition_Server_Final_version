@@ -6,7 +6,7 @@ Based on PipeLine.py from the original Scripts directory
 
 import os
 from common_utilities import LOG_LEVEL
-from utilities import full_system_initialization, get_environment_config
+from utilities import full_system_initialization
 import time
 from src import PipeLine
 
@@ -24,13 +24,9 @@ def main():
         storage_client,
     ) = full_system_initialization(__file__, f"Pipeline_Worker_{pipeline_id}")
 
-    # Get environment configuration
-    env_config = get_environment_config()
-
     # Create Pipeline
     pipeline = PipeLine(
         f"PipeLine_{pipeline_id}",
-        Max_clients=env_config["MaxClientPerPipeline"],
         models_init_parameters=models_parameters,
         logger=worker_logger,
         storage_client=storage_client,

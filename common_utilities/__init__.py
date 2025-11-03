@@ -12,9 +12,8 @@ from .files_handler import (
     read_json,
 )
 from .logger import LOGGER, LOG_LEVEL
-from .RMQ import Sync_RMQ, Async_RMQ, RequeueMessage
+from .RMQ import Async_RMQ, RequeueMessage
 from .config_manager import ConfigManager, reset_config_cache
-from .storage import StorageClient, StorageSettings, build_storage_client
 from .storage import StorageClient, StorageSettings, build_storage_client
 
 __all__ = [
@@ -30,7 +29,6 @@ __all__ = [
     "get_namespace",
     "write_json",
     "read_json",
-    "Sync_RMQ",
     "Async_RMQ",
     "RequeueMessage",
     "ConfigManager",

@@ -48,13 +48,11 @@ class ActionDecisionManager:
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def phone_decide_action(self,model_result):
         p__decide_action= self.__phone_decide_action(model_result)
-        if p__decide_action["action"] != Action.NO_ACTION.value:
-            p__decide_action['client_name']=model_result['client_name']
-            p__decide_action['send_time']=model_result['send_time']
-            p__decide_action['finish_time']=time.strftime("%H-%M-%S",time.localtime())
-            return   (True,p__decide_action)
-        else:
-            return (False,None)
+        p__decide_action['client_name']=model_result['client_name']
+        p__decide_action['send_time']=model_result['send_time']
+        p__decide_action['finish_time']=time.strftime("%H-%M-%S",time.localtime())
+        found_action = p__decide_action["action"] != Action.NO_ACTION.value
+        return (found_action, p__decide_action)
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def face_decide_action(self,model_result):
         f__decide_action= self.__face_decide_action(model_result)

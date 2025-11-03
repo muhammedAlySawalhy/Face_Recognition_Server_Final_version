@@ -7,7 +7,7 @@ The client understands two dataset layouts:
   2. Manifest file (preferred): Data/test_images/manifest.json describing each sample.
 
 Environment overrides:
-  LOCUST_WS_DATASET_DIR         Base directory for samples (default Data/test_images)
+  LOCUST_WS_DATASET_DIR         Base directory for samples (default Data/test_images; falls back to Data/Users_DataBase)
   LOCUST_WS_MANIFEST_PATH       Explicit manifest path (default <dataset>/manifest.json)
   LOCUST_WS_TASKS               Comma separated task filter (face_recognition,object_detection,face_detection)
   LOCUST_WS_LABELS              Comma separated label filter (e.g. genuine,spoof)
@@ -16,27 +16,32 @@ Environment overrides:
   LOCUST_WS_WAIT_MIN            Minimum wait-time between requests (seconds, default 1.0)
   LOCUST_WS_WAIT_MAX            Maximum wait-time between requests (seconds, default 3.0)
   LOCUST_WS_HOST                Gateway host (default 127.0.0.1)
-  LOCUST_WS_PORT                Gateway port (default 8000)
+  LOCUST_WS_PORT                Gateway port (default 8001)
   LOCUST_WS_PATH                Gateway endpoint (default /ws)
   LOCUST_WS_IMAGE_EXTS          Legacy glob extensions for directory mode (default jpg,jpeg,png)
   LOCUST_WS_RECV_TIMEOUT        Seconds to wait for gateway responses (default 15.0)
   LOCUST_WS_DRAIN_ALL_MESSAGES  "true" to read all pending responses before returning to Locust
+  LOCUST_WS_DISABLE_CACHE       "true" to rebuild encoded samples for every Locust user (default false)
+  LOCUST_WS_CACHE_BUSTER        Optional string; change value to force reload of cached samples
 """
 
 from __future__ import annotations
 
 import base64
+import itertools
 import json
 import os
 import random
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from locust import User, between, events, task
 from websocket import (
+    WebSocket,
     WebSocketConnectionClosedException,
     WebSocketTimeoutException,
     create_connection,
@@ -76,6 +81,10 @@ LABEL_EXPECTATIONS: Dict[str, Optional[str]] = {
     "no_face": None,
 }
 
+DISABLE_SAMPLE_CACHE = _str_to_bool(os.getenv("LOCUST_WS_DISABLE_CACHE"), False)
+CACHE_BUSTER = os.getenv("LOCUST_WS_CACHE_BUSTER") or None
+DEFAULT_DATASET_SUBDIRS: Tuple[str, ...] = ("test_images", "Users_DataBase")
+
 
 @dataclass
 class SamplePayload:
@@ -104,6 +113,17 @@ class SamplePayload:
         for key, value in self.meta.items():
             context.setdefault(key, value)
         return context
+
+
+@dataclass(frozen=True)
+class SampleLoaderConfig:
+    dataset_dir: Path
+    manifest_path: Optional[Path]
+    manifest_mtime_ns: Optional[int]
+    task_filter: Tuple[str, ...]
+    label_filter: Tuple[str, ...]
+    extensions: Tuple[str, ...]
+    cache_buster: Optional[str]
 
 
 def _encode_image_to_base64(image_path: Path, size: Tuple[int, int] = (240, 240)) -> str:
@@ -147,6 +167,13 @@ def _derive_user_and_label(samples_dir: Path, image_path: Path) -> Tuple[str, st
 
 def _expected_for_label(label: str) -> Optional[str]:
     return LABEL_EXPECTATIONS.get(label)
+
+
+def _parse_csv_env(var_name: str) -> Tuple[str, ...]:
+    raw_value = os.getenv(var_name)
+    if not raw_value:
+        return tuple()
+    return tuple(item.strip() for item in raw_value.split(",") if item.strip())
 
 
 def _load_from_manifest(
@@ -286,50 +313,118 @@ def _generate_unknown_user_payloads(
     return variants
 
 
-def _load_samples() -> List[SamplePayload]:
-    default_dataset = Path(__file__).resolve().parents[2] / "Data" / "test_images"
-    dataset_dir = (
-        Path(os.getenv("LOCUST_WS_DATASET_DIR", default_dataset)).expanduser().resolve()
-    )
-    if not dataset_dir.exists():
-        raise FileNotFoundError(f"Samples directory not found: {dataset_dir}")
+def _resolve_dataset_dir() -> Path:
+    dataset_override = os.getenv("LOCUST_WS_DATASET_DIR")
+    if dataset_override:
+        dataset_dir = Path(dataset_override).expanduser().resolve()
+        if not dataset_dir.exists():
+            raise FileNotFoundError(
+                f"Samples directory override not found: {dataset_dir}"
+            )
+        return dataset_dir
 
+    base_data_dir = Path(__file__).resolve().parents[2] / "Data"
+    for subdir in DEFAULT_DATASET_SUBDIRS:
+        candidate = (base_data_dir / subdir).resolve()
+        if candidate.exists():
+            return candidate
+
+    raise FileNotFoundError(
+        f"No default sample directories found under {base_data_dir}. "
+        "Set LOCUST_WS_DATASET_DIR to point at your test images."
+    )
+
+
+def _build_sample_loader_config(dataset_dir: Path) -> SampleLoaderConfig:
     manifest_env = os.getenv("LOCUST_WS_MANIFEST_PATH")
     manifest_path = (
         Path(manifest_env).expanduser().resolve()
         if manifest_env
-        else dataset_dir / "manifest.json"
+        else (dataset_dir / "manifest.json")
     )
-    task_filter = (
-        os.getenv("LOCUST_WS_TASKS", "").split(",")
-        if os.getenv("LOCUST_WS_TASKS")
-        else []
+    manifest_exists = manifest_path.exists()
+    manifest_mtime_ns = (
+        manifest_path.stat().st_mtime_ns if manifest_exists else None
     )
-    label_filter = (
-        os.getenv("LOCUST_WS_LABELS", "").split(",")
-        if os.getenv("LOCUST_WS_LABELS")
-        else []
+    task_filter = _parse_csv_env("LOCUST_WS_TASKS")
+    label_filter = _parse_csv_env("LOCUST_WS_LABELS")
+    extensions = tuple(
+        ext.strip().lower()
+        for ext in os.getenv("LOCUST_WS_IMAGE_EXTS", "jpg,jpeg,png").split(",")
+        if ext.strip()
+    )
+    if not extensions:
+        extensions = ("jpg", "jpeg", "png")
+    return SampleLoaderConfig(
+        dataset_dir=dataset_dir,
+        manifest_path=manifest_path if manifest_exists else None,
+        manifest_mtime_ns=manifest_mtime_ns,
+        task_filter=task_filter,
+        label_filter=label_filter,
+        extensions=extensions,
+        cache_buster=CACHE_BUSTER,
     )
 
-    extensions = os.getenv("LOCUST_WS_IMAGE_EXTS", "jpg,jpeg,png").split(",")
-    payloads: List[SamplePayload] = []
-    if manifest_path.exists():
-        payloads.extend(
-            _load_from_manifest(manifest_path, dataset_dir, task_filter, label_filter)
+
+def _load_base_payloads_direct(config: SampleLoaderConfig) -> List[SamplePayload]:
+    if config.manifest_path is None:
+        payloads = _load_from_directory(
+            config.dataset_dir, config.extensions, config.label_filter
         )
-    else:
-        payloads.extend(_load_from_directory(dataset_dir, extensions, label_filter))
+        if not payloads:
+            raise RuntimeError(f"No sample images available in {config.dataset_dir}")
+        return payloads
 
-    # Enrich manifest-driven payloads with any additional samples found on disk so that
-    # load tests can exercise every available user directory (e.g. other_user, sample_user).
+    payloads = _load_from_manifest(
+        config.manifest_path,
+        config.dataset_dir,
+        config.task_filter,
+        config.label_filter,
+    )
     seen_sources = {str(sample.source) for sample in payloads}
-    for extra_sample in _load_from_directory(dataset_dir, extensions, label_filter):
-        if str(extra_sample.source) not in seen_sources:
-            payloads.append(extra_sample)
-            seen_sources.add(str(extra_sample.source))
+    label_set = {label.strip().lower() for label in config.label_filter if label.strip()}
+    for image_path in _discover_candidate_paths(
+        config.dataset_dir, config.extensions
+    ):
+        image_path = image_path.resolve()
+        path_str = str(image_path)
+        if path_str in seen_sources:
+            continue
+        user_name, label = _derive_user_and_label(config.dataset_dir, image_path)
+        if label_set and label.lower() not in label_set:
+            continue
+        encoded = _encode_image_to_base64(image_path)
+        payloads.append(
+            SamplePayload(
+                user_name=user_name,
+                label=label,
+                task="face_recognition",
+                tags=(label,),
+                expected_outcome=_expected_for_label(label),
+                image_b64=encoded,
+                source=image_path,
+                meta={"manifest_source": None},
+            )
+        )
+        seen_sources.add(path_str)
 
     if not payloads:
-        raise RuntimeError(f"No sample images available in {dataset_dir}")
+        raise RuntimeError(f"No sample images available in {config.dataset_dir}")
+    return payloads
+
+
+@lru_cache(maxsize=4)
+def _load_base_payloads_cached(config: SampleLoaderConfig) -> Tuple[SamplePayload, ...]:
+    return tuple(_load_base_payloads_direct(config))
+
+
+def _load_samples() -> List[SamplePayload]:
+    dataset_dir = _resolve_dataset_dir()
+    config = _build_sample_loader_config(dataset_dir)
+    if DISABLE_SAMPLE_CACHE:
+        payloads = _load_base_payloads_direct(config)
+    else:
+        payloads = list(_load_base_payloads_cached(config))
 
     if _str_to_bool(os.getenv("LOCUST_WS_INCLUDE_MISMATCHES"), default=False):
         payloads.extend(_generate_mismatch_variants(payloads))
@@ -352,55 +447,56 @@ class GatewayWebsocketUser(User):
     def on_start(self) -> None:
         self.payloads = _load_samples()
         ws_host = os.getenv("LOCUST_WS_HOST", "127.0.0.1")
-        ws_port = os.getenv("LOCUST_WS_PORT", "8000")
+        ws_port = os.getenv("LOCUST_WS_PORT", "8001")
         ws_path = os.getenv("LOCUST_WS_PATH", "/ws")
         self.ws_url = f"ws://{ws_host}:{ws_port}{ws_path}"
-        self.ws = None
-        self._ensure_connection()
+        self.ws_connections: Dict[str, WebSocket] = {}
+        if not self.payloads:
+            raise RuntimeError("No payloads were discovered for Locust to send.")
+        shuffled = random.sample(self.payloads, len(self.payloads))
+        self._payload_cycle = itertools.cycle(shuffled)
 
     def on_stop(self) -> None:
-        self._reset_connection()
+        for client_name in list(self.ws_connections.keys()):
+            self._reset_connection(client_name)
 
-    def _ensure_connection(self) -> None:
-        if self.ws is not None:
+    def _ensure_connection(self, client_name: str) -> None:
+        if client_name in self.ws_connections:
             return
         connect_start = time.perf_counter()
         try:
-            self.ws = create_connection(self.ws_url, timeout=10)
-            self.ws.settimeout(RECV_TIMEOUT)
+            ws = create_connection(self.ws_url, timeout=10)
+            ws.settimeout(RECV_TIMEOUT)
         except Exception as exc:
             events.request.fire(
                 request_type="WS",
                 name="connect",
                 response_time=(time.perf_counter() - connect_start) * 1000,
                 response_length=0,
-                context={"ws_url": self.ws_url},
+                context={"ws_url": self.ws_url, "client_name": client_name},
                 exception=exc,
             )
-            self._reset_connection()
             raise
         else:
+            self.ws_connections[client_name] = ws
             events.request.fire(
                 request_type="WS",
                 name="connect",
                 response_time=(time.perf_counter() - connect_start) * 1000,
                 response_length=0,
-                context={"ws_url": self.ws_url},
+                context={"ws_url": self.ws_url, "client_name": client_name},
             )
 
-    def _reset_connection(self) -> None:
-        if self.ws is None:
+    def _reset_connection(self, client_name: str) -> None:
+        ws = self.ws_connections.pop(client_name, None)
+        if ws is None:
             return
         try:
-            self.ws.close()
+            ws.close()
         except Exception:
             pass
-        finally:
-            self.ws = None
 
-    def _drain_gateway_messages(self) -> List[str]:
-        if self.ws is None:
-            return []
+    def _drain_gateway_messages(self, client_name: str, ws) -> List[str]:
         messages: List[str] = []
         deadline = time.perf_counter() + RECV_TIMEOUT
         while True:
@@ -408,27 +504,29 @@ class GatewayWebsocketUser(User):
             if remaining <= 0:
                 break
             try:
-                self.ws.settimeout(max(0.1, remaining))
-                message = self.ws.recv()
+                ws.settimeout(max(0.1, remaining))
+                message = ws.recv()
             except WebSocketTimeoutException:
                 break
             except WebSocketConnectionClosedException:
-                self._reset_connection()
+                self._reset_connection(client_name)
                 raise
             except Exception:
-                self._reset_connection()
+                self._reset_connection(client_name)
                 raise
             else:
                 messages.append(message)
                 if not DRAIN_ALL_MESSAGES:
                     break
-        if self.ws is not None:
-            self.ws.settimeout(RECV_TIMEOUT)
+        ws.settimeout(RECV_TIMEOUT)
         return messages
 
     @task
     def send_image(self) -> None:
-        sample = random.choice(self.payloads)
+        try:
+            sample = next(self._payload_cycle)
+        except AttributeError:
+            sample = random.choice(self.payloads)
         payload = sample.as_request_payload()
         request_meta = {
             "request_type": "WS",
@@ -439,17 +537,17 @@ class GatewayWebsocketUser(User):
         }
         start_time = time.perf_counter()
         try:
-            self._ensure_connection()
-            assert self.ws is not None  # for type checkers
-            self.ws.send(json.dumps(payload))
-            responses = self._drain_gateway_messages()
+            self._ensure_connection(sample.user_name)
+            ws = self.ws_connections[sample.user_name]
+            ws.send(json.dumps(payload))
+            responses = self._drain_gateway_messages(sample.user_name, ws)
             request_meta["response_length"] = len(payload["image"])
             request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
             if responses:
                 request_meta["context"]["gateway_responses"] = responses
             events.request.fire(**request_meta)
         except Exception as exc:  # Locust records the failure
-            self._reset_connection()
+            self._reset_connection(sample.user_name)
             request_meta["response_time"] = (time.perf_counter() - start_time) * 1000
             request_meta["exception"] = exc
             events.request.fire(**request_meta)

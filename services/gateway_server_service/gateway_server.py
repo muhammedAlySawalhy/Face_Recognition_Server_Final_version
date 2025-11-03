@@ -40,10 +40,6 @@ def main():
             "window_size_in_millis": env_config["RATE_LIMIT_WINDOW_MS"],
             "cleanup_interval_in_millis": env_config["RATE_LIMIT_CLEANUP_MS"],
         },
-        websocket_limits={
-            "max_queue": env_config["WEBSOCKET_MAX_QUEUE"],
-            "semaphore": env_config["WEBSOCKET_SEMAPHORE"],
-        },
         storage_client=storage_client,
     )
 

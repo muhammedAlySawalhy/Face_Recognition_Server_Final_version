@@ -21,6 +21,7 @@ fresh and deterministic.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -29,8 +30,9 @@ import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import itertools
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import requests
 from PIL import Image, ImageDraw
@@ -219,6 +221,47 @@ DATASET: List[SampleGroup] = [
 ]
 
 
+def build_dataset(
+    base_groups: Sequence[SampleGroup],
+    *,
+    synthetic_clients: int = 0,
+    target_clients: Optional[int] = None,
+    prefix: str = "synthetic",
+) -> List[SampleGroup]:
+    groups = [SampleGroup(
+        user_name=group.user_name,
+        reference=group.reference,
+        genuine=list(group.genuine),
+        spoof=list(group.spoof),
+        mismatch=list(group.mismatch),
+        extra_labels={label: list(urls) for label, urls in group.extra_labels.items()},
+    ) for group in base_groups]
+
+    if target_clients is not None:
+        synthetic_clients = max(synthetic_clients, max(0, target_clients - len(groups)))
+
+    if synthetic_clients <= 0:
+        return groups
+
+    template_cycle = itertools.cycle(base_groups)
+    for idx in range(1, synthetic_clients + 1):
+        template = next(template_cycle)
+        user_name = f"{prefix}_{idx:03d}"
+        groups.append(
+            SampleGroup(
+                user_name=user_name,
+                reference=template.reference,
+                genuine=list(template.genuine),
+                spoof=list(template.spoof),
+                mismatch=[],  # populated later
+                extra_labels={
+                    label: list(urls) for label, urls in template.extra_labels.items()
+                },
+            )
+        )
+    return groups
+
+
 def populate_mismatch_sets(groups: List[SampleGroup]) -> None:
     for group in groups:
         others = [g for g in groups if g.user_name != group.user_name]
@@ -295,12 +338,45 @@ def _write_manifest(entries: List[dict], counts: Counter) -> None:
     MANIFEST_PATH.write_text(json.dumps(manifest, indent=2))
 
 
-def main() -> int:
+def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Seed or expand the synthetic face-recognition dataset.",
+    )
+    parser.add_argument(
+        "--synthetic-clients",
+        type=int,
+        default=0,
+        help="Number of additional synthetic client identities to generate.",
+    )
+    parser.add_argument(
+        "--target-clients",
+        type=int,
+        default=None,
+        help="Desired total number of client identities (overrides --synthetic-clients when larger).",
+    )
+    parser.add_argument(
+        "--synthetic-prefix",
+        type=str,
+        default="synthetic",
+        help="Prefix used for auto-generated client identifiers (default: 'synthetic').",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = parse_args(argv)
+
     USERS_DB_DIR.mkdir(parents=True, exist_ok=True)
     SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 
     try:
-        entries, counts = seed_dataset(DATASET)
+        dataset = build_dataset(
+            DATASET,
+            synthetic_clients=args.synthetic_clients,
+            target_clients=args.target_clients,
+            prefix=args.synthetic_prefix,
+        )
+        entries, counts = seed_dataset(dataset)
         _write_manifest(entries, counts)
     except requests.HTTPError as exc:
         print(f"[!] HTTP error while downloading dataset: {exc}", file=sys.stderr)
@@ -313,6 +389,7 @@ def main() -> int:
     for label, total in sorted(counts.items()):
         print(f"    - {label}: {total}")
     print(f"[+] Manifest written to {MANIFEST_PATH}")
+    print(f"[+] Total unique clients provisioned: {len(dataset)}")
     return 0
 
 

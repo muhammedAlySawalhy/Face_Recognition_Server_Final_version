@@ -7,9 +7,10 @@ services:
     environment:
       - NAMESPACE=${SERVER_NAME}
       - SERVICE_TYPE=gateway
+      - TZ=Africa/Cairo
       - CONFIG_PROFILE=${CONFIG_PROFILE:-prod-1gpu-24gb}
       - SERVER_IP=0.0.0.0
-      - SERVER_PORT=8000
+      - SERVER_PORT=8001
       - ENDPOINT_PATH=/ws
       - REDIS_HOSTNAME=Redis_Server
       - REDIS_HOSTPORT=6379
@@ -31,6 +32,8 @@ services:
       - rmq_Server
       - Load_Balancer
       - minio
+    ports:
+      - "0.0.0.0:${GATEWAY_PORT:-8001}:8001"
     networks:
       - load_balance_network
       - redis_network
@@ -46,6 +49,7 @@ services:
     environment:
       - NAMESPACE=${SERVER_NAME}
       - SERVICE_TYPE=pipelines-manager
+      - TZ=Africa/Cairo
       - CONFIG_PROFILE=${CONFIG_PROFILE:-prod-1gpu-24gb}
       - REDIS_HOSTNAME=Redis_Server
       - REDIS_HOSTPORT=6379
@@ -70,6 +74,7 @@ services:
     container_name: fr_decision_manager
     environment:
       - SERVICE_TYPE=decision-manager
+      - TZ=Africa/Cairo
       - RMQ_URL=amqp://admin:admin123@rmq_Server:5672
       - NAMESPACE=${SERVER_NAME}
     volumes:
@@ -87,29 +92,6 @@ services:
     restart: unless-stopped
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
   #-------------------------------------------------------------------------------------------------------------#
-  # Monitoring Service (optional - enable via compose profile 'monitoring')
-  monitoring:
-    image: fr-server-monitoring_service:latest
-    container_name: fr_monitoring
-    profiles:
-      - monitoring
-    environment:
-      - MONITORING_REDIS_HOST=Redis_Server
-      - MONITORING_REDIS_PORT=6379
-      - MONITORING_REDIS_DB=0
-      - MONITORING_RMQ_URL=amqp://admin:admin123@rmq_Server:5672
-      - MONITORING_PORT=${MONITORING_PORT:-8080}
-      - MONITORING_MINIO_ENDPOINT=${STORAGE_ENDPOINT:-minio:9000}
-      - MONITORING_MINIO_ACCESS_KEY=${STORAGE_ACCESS_KEY:-minioadmin}
-      - MONITORING_MINIO_SECRET_KEY=${STORAGE_SECRET_KEY:-minioadmin}
-      - MONITORING_MINIO_SECURE=${STORAGE_SECURE:-false}
-    ports:
-      - "${MONITORING_PORT:-8080}:8080"
-    networks:
-      - redis_network
-      - rmq_network
-      - storage_network
-    restart: unless-stopped
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
   #-------------------------------------------------------------------------------------------------------------#
   # Server Manager Service
@@ -117,11 +99,12 @@ services:
     image: fr-server-server_manager_service:latest
     container_name: fr_server_manager
     ports:
-      - "${SERVER_MANAGER_PORT}:${SERVER_MANAGER_PORT}"
+      - "0.0.0.0:${SERVER_MANAGER_PORT}:${SERVER_MANAGER_PORT}"
     environment:
       - SERVICE_TYPE=server-manager
       - NAMESPACE=${SERVER_NAME}
       - SERVER_NAME=${SERVER_NAME}
+      - TZ=Africa/Cairo
       - REDIS_HOSTNAME=Redis_Server
       - REDIS_HOSTPORT=6379
       - RMQ_URL=amqp://admin:admin123@rmq_Server:5672
@@ -152,6 +135,7 @@ services:
     image: minio/minio
     container_name: fr_minio
     environment:
+      - TZ=Africa/Cairo
       - MINIO_ROOT_USER=${STORAGE_ACCESS_KEY:-minioadmin}
       - MINIO_ROOT_PASSWORD=${STORAGE_SECRET_KEY:-minioadmin}
     command: server /data --console-address ":9001"
@@ -172,6 +156,8 @@ services:
     container_name: Redis_Server
     hostname: Redis_Server
     restart: unless-stopped
+    environment:
+      - TZ=Africa/Cairo
     command: redis-server --save "" --appendonly no
     volumes:
       - type: volume
@@ -190,6 +176,7 @@ services:
     container_name: rmq_Server
     restart: unless-stopped
     environment:
+      TZ: Africa/Cairo
       RABBITMQ_DEFAULT_USER: admin
       RABBITMQ_DEFAULT_PASS: admin123
     ports:
@@ -211,7 +198,8 @@ services:
     restart: unless-stopped
     environment:
       - GATEWAY_HOST=fr_gateway
-      - GATEWAY_PORT=8000
+      - GATEWAY_PORT=8001
+      - TZ=Africa/Cairo
       - NGINX_PORT=80
     networks:
       - fr_network
@@ -221,7 +209,7 @@ services:
     volumes:
       - ${ROOT_PATH}/config_templates/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
 
-    command: /bin/sh -c "envsubst < /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
+    command: /bin/sh -c "envsubst '$$GATEWAY_HOST $$GATEWAY_PORT $$NGINX_PORT' < /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
 
 #**************************************************************************************************************#
 #**************************************************************************************************************#

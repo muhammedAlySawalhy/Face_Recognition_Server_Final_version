@@ -1,12 +1,5 @@
 #!/usr/bin/env python3.10
-"""
-Shared System Initialization Module
-Handles path setup, directory creation, and environment configuration
-that was originally in main.py
-"""
-
 import os
-import sys
 
 from common_utilities import (
     ConfigManager,
@@ -14,45 +7,31 @@ from common_utilities import (
     LOG_LEVEL,
     build_storage_client,
     get_root_path,
+    get_namespace,
     set_namespace,
     set_paths,
 )
+from common_utilities.log_maintenance import start_log_cleanup_worker_from_paths
 
 
 def initialize_system_paths(service_file_path):
-    """
-    Initialize system paths based on the service location
-    Returns the paths dictionary
-    """
-    # Calculate root path from service location (go up to main directory)
     root_path = get_root_path(start=service_file_path, APP_HEAD="gateway_server.py")
-
     __APP_DIRS_PATHS__ = dict()
     __APP_DIRS_PATHS__["APPLICATION_ROOT_PATH"] = root_path
     __APP_DIRS_PATHS__["LOGS_ROOT_PATH"] = root_path
     __APP_DIRS_PATHS__["USERS_DATABASE_ROOT_PATH"] = os.path.join(
         root_path, "Data", "Users_DataBase"
     )
-
-    # Set system namespace
     __SYSTEM_NAMESPACE__ = os.getenv(
         "NAMESPACE", default=os.getenv("HOSTNAME", default=None)
     )
-
-    # Apply paths and namespace globally
     set_paths(__APP_DIRS_PATHS__)
     set_namespace(__SYSTEM_NAMESPACE__)
-    # Change to root directory
     os.chdir(root_path)
-
     return __APP_DIRS_PATHS__
 
 
 def full_system_initialization(service_file_path, service_name):
-    """
-    Complete system initialization for a microservice
-    Returns: (paths_dict, service_logger, config_manager, storage_client)
-    """
     paths = initialize_system_paths(service_file_path)
     service_logger = LOGGER(service_name)
     service_logger.create_Stream_logger(log_levels=["INFO", "ERROR", "WARNING"])
@@ -79,14 +58,15 @@ def full_system_initialization(service_file_path, service_name):
         f"Storage provider set to '{storage_client.provider}' bucket '{storage_client.frames_bucket}'",
         LOG_LEVEL.INFO,
     )
+    start_log_cleanup_worker_from_paths(
+        paths,
+        namespace=get_namespace(),
+    )
 
     return paths, service_logger, config_manager, storage_client
 
 
 def get_environment_config():
-    """
-    Get environment configuration with defaults
-    """
     config_manager = ConfigManager.instance()
     gateway_settings = config_manager.service_settings("gateway")
     websocket_settings = gateway_settings.get("websocket", {})
@@ -99,11 +79,5 @@ def get_environment_config():
         "RATE_LIMIT_MAX_CLIENTS": rate_cfg.max_clients,
         "RATE_LIMIT_WINDOW_MS": rate_cfg.window_ms,
         "RATE_LIMIT_CLEANUP_MS": rate_cfg.cleanup_ms,
-        "WEBSOCKET_MAX_QUEUE": int(
-            websocket_settings.get("max_queue", rate_cfg.max_clients * 6)
-        ),
-        "WEBSOCKET_SEMAPHORE": int(
-            websocket_settings.get("semaphore_size", min(128, rate_cfg.max_clients))
-        ),
         "CONFIG_PROFILE": config_manager.profile_name,
     }

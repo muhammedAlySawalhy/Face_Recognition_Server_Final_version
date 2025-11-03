@@ -26,6 +26,7 @@ class FaceDetectionRecognition:
         Recognition_Threshold=0.25,
         Anti_Spoof_threshold=0.25,
         Recognition_Metric="cosine_similarity",
+        Detection_confidence: float = 0.15,
         logger: str = None,
     ):
         # Logger initialization: Create a file and stream logger if no logger is provided.
@@ -100,7 +101,11 @@ class FaceDetectionRecognition:
         self.logs.write_logs(f"Using {self.recognition_model_device} for Recognition Model",LOG_LEVEL.DEBUG)
         self.logs.write_logs(f"Using {self.spoof_model_device} for Spoof Model",LOG_LEVEL.DEBUG)
         #------------------------------------------------------------------------------------------------------------------#
-        self.Detect_Faces=DetectFaces(model_weights_path=Detection_model_weights_path,Model_device=self.detection_model_device)
+        self.Detect_Faces=DetectFaces(
+            model_weights_path=Detection_model_weights_path,
+            Model_device=self.detection_model_device,
+            confidence=Detection_confidence,
+        )
         #------------------------------------------------------------------------------------------------------------------#
         self.Recognition_Face=RecognitionFace(model_weights_path=Recognition_model_weights_path,
                                               Model_device=self.recognition_model_device,
@@ -129,13 +134,34 @@ class FaceDetectionRecognition:
                 LOG_LEVEL.WARNING,
             )
             is_correct_client = False
+            recognition_details = {
+                "verified": False,
+                "threshold": self.Recognition_Face.recognition_threshold,
+                "distance": None,
+            }
         else:
-            is_correct_client=self.Recognition_Face.recognize_face(
+            recognition_details = self.Recognition_Face.recognize_face(
                 face_image=face_image,
                 ref_embedding=ref_embedding,
+                return_details=True,
+            )
+            is_correct_client = bool(recognition_details.get("verified"))
+            self.logs.write_logs(
+                f"{client_name}-Recognition score={recognition_details.get('distance')} "
+                f"threshold={recognition_details.get('threshold')} verified={is_correct_client}",
+                LOG_LEVEL.DEBUG,
             )
         is_spoof=self.Spoof_Checker.check_spoof_face(face_image=face_image,face_bbox=face_bbox)
-        return {"check_client": is_correct_client, "check_spoof": is_spoof}
+        self.logs.write_logs(
+            f"{client_name}-Spoof check result={is_spoof}",
+            LOG_LEVEL.DEBUG,
+        )
+        return {
+            "check_client": is_correct_client,
+            "check_spoof": is_spoof,
+            "recognition_threshold": recognition_details.get("threshold"),
+            "recognition_metric_value": recognition_details.get("distance"),
+        }
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def pipeline(self, Clients_data):
         """
@@ -174,7 +200,7 @@ class FaceDetectionRecognition:
                 f"{client_name}-Received frame with zero size", LOG_LEVEL.WARNING
             )
             return pipeline_result
-        image = crop_image_center(image, crop_width=640, crop_height=480)
+        image = crop_image_center(image, crop_width=960, crop_height=720)
         if image is None or image.size == 0:
             self.logs.write_logs(
                 f"{client_name}-Cropping produced an empty frame", LOG_LEVEL.WARNING
@@ -219,6 +245,10 @@ class FaceDetectionRecognition:
                 and cached_version >= current_version
                 and client_name in self._ref_embeddings
             ):
+                self.logs.write_logs(
+                    f"{client_name}-Using cached reference embedding (mtime={current_version})",
+                    LOG_LEVEL.DEBUG,
+                )
                 return self._ref_embeddings[client_name]
 
         ref_image = get_client_image(client_name)
@@ -247,4 +277,8 @@ class FaceDetectionRecognition:
         with self._ref_cache_lock:
             self._ref_embeddings[client_name] = embedding
             self._ref_versions[client_name] = current_version
+        self.logs.write_logs(
+            f"{client_name}-Reference embedding refreshed (mtime={current_version})",
+            LOG_LEVEL.INFO,
+        )
         return embedding.copy()

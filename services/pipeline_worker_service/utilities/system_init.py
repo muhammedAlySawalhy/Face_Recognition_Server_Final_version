@@ -1,10 +1,4 @@
 #!/usr/bin/env python3.10
-"""
-Shared System Initialization Module
-Handles path setup, directory creation, and environment configuration
-that was originally in main.py
-"""
-
 import os
 import json
 import yaml
@@ -15,9 +9,11 @@ from common_utilities import (
     LOGGER,
     LOG_LEVEL,
     get_root_path,
+    get_namespace,
     set_namespace,
     set_paths,
 )
+from common_utilities.log_maintenance import start_log_cleanup_worker_from_paths
 from utilities import create_Models_Weights_Directory
 from deepface.commons.folder_utils import (
     initialize_folder as deepface_initialize_folder,
@@ -25,11 +21,6 @@ from deepface.commons.folder_utils import (
 
 
 def initialize_system_paths(service_file_path):
-    """
-    Initialize system paths based on the service location
-    Returns the paths dictionary
-    """
-    # Calculate root path from service location (go up to main directory)
     root_path = get_root_path(service_file_path, "pipeline_worker.py")
 
     __APP_DIRS_PATHS__ = dict()
@@ -40,52 +31,36 @@ def initialize_system_paths(service_file_path):
     __APP_DIRS_PATHS__["ACTIONS_ROOT_PATH"] = os.path.join(root_path, "Data", "Actions")
     __APP_DIRS_PATHS__["SERVER_DATA_ROOT_PATH"] = os.path.join(root_path, "Data", "Server_Data")
 
-    # Set system namespace
     __SYSTEM_NAMESPACE__ = os.getenv(
         "NAMESPACE", default=os.getenv("HOSTNAME", default=None)
     )
-
-    # Apply paths and namespace globally
     set_paths(__APP_DIRS_PATHS__)
     set_namespace(__SYSTEM_NAMESPACE__)
-
-    # Change to root directory
     os.chdir(root_path)
 
     return __APP_DIRS_PATHS__
 
 
 def create_required_directories():
-    """
-    Create all required directories
-    """
     create_Models_Weights_Directory()
     deepface_initialize_folder()
 
 
 def get_models_parameters(models_weights_root_path):
-    """
-    Get the models parameters configuration
-    """
     global service_logger
     default_models_parameters = {
-        # Models Weights Parameters
         "Models_Weights_dir": "Models_Weights",
         "ObjectDetection_model_weights": "phone_detection.pt",
         "FaceDetection_model_weights": "yolov8_model.pt",
         "FaceRecognition_model_weights": "vgg_face_weights.h5",
         "FaceSpoofChecker_model_weights": None,
-        # GPU Device Parameters
         "Object_Detection_Models_device": "cuda:0",
         "Face_Detection_Model_device": "cuda:0",
         "Face_Recognition_Model_device": "GPU:0",
         "spoof_Models_device": "cuda:0",
-        # Recognition Parameters
         "Recognition_model_name": "VGG-Face",
         "Recognition_Metric": "cosine_similarity",
-        # Phone Detection Parameters
         "Object_class_number": 67,
-        # Models Threshold Parameters
         "Recognition_Threshold": 0.3,
         "Object_threshold": 65,
         "Anti_Spoof_threshold": 0.99,
@@ -116,7 +91,6 @@ def get_models_parameters(models_weights_root_path):
 
 
 def full_system_initialization(service_file_path, service_name):
-    """Complete system initialization for a pipeline worker microservice."""
     global service_logger
     paths = initialize_system_paths(service_file_path)
     service_logger = LOGGER(service_name)
@@ -149,18 +123,20 @@ def full_system_initialization(service_file_path, service_name):
         f"Storage provider '{storage_client.provider}' bucket '{storage_client.frames_bucket}'",
         LOG_LEVEL.INFO,
     )
+    start_log_cleanup_worker_from_paths(
+        paths,
+        namespace=get_namespace(),
+    )
 
     return paths, models_parameters, service_logger, config_manager, storage_client
 
 
 def get_environment_config():
-    """Get environment configuration with defaults derived from the deployment profile."""
     config_manager = ConfigManager.instance()
     pipeline_cfg = config_manager.pipeline
     service_settings = config_manager.service_settings("pipeline_worker")
 
     return {
-        "MaxClientPerPipeline": pipeline_cfg.max_clients_per_pipeline,
         "MaxPipeline": pipeline_cfg.pipelines_per_server,
         "PIPELINES_TOTAL": pipeline_cfg.total_pipelines,
         "WARMUP_BATCH": bool(service_settings.get("warmup_batch", False)),

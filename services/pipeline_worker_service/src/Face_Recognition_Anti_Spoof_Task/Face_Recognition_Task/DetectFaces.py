@@ -1,16 +1,21 @@
+import threading
+from typing import Union
+
+import numpy as np
 import torch
 import ultralytics
 from supervision import Detections
-import numpy as np
-from typing import Union
-from common_utilities import LOGGER,LOG_LEVEL,crop_image_bbox
+
+from common_utilities import LOGGER, LOG_LEVEL, crop_image_bbox
 
 class DetectFaces:
-    def __init__(self,
+    def __init__(
+        self,
         model_weights_path: str,
         Model_device: str = "cpu",
-        logger:Union[str,LOGGER]=None
-        ):
+        confidence: float = 0.15,
+        logger: Union[str, LOGGER] = None,
+    ):
         # Logger initialization: Create a file and stream logger if no logger is provided.
         #_________________________________________________________________________#
         if isinstance(logger,str):
@@ -22,8 +27,10 @@ class DetectFaces:
         else:
             self.logs = LOGGER(None)
         #_________________________________________________________________________#
-        self.device=Model_device
-        self.model_weights_path=model_weights_path
+        self.device = torch.device(Model_device) if not isinstance(Model_device, torch.device) else Model_device
+        self.model_weights_path = model_weights_path
+        self.confidence_threshold = max(0.0, min(1.0, confidence))
+        self._inference_lock = threading.Lock()
         # Load the YOLO face detection model with the specified weights.
         self.detection_model:ultralytics.YOLO = ultralytics.YOLO(model_weights_path, verbose=False).to(self.device)
         self.__cache_model()
@@ -38,9 +45,9 @@ class DetectFaces:
         """
         Cache the face detection and recognition models by performing dummy inferences to avoid cold starts during actual use.
         """
-        dummy_input = torch.randn(1, 3, 224, 224) / 255
-        dummy_input.to(self.device)
-        _ = self.detection_model(dummy_input,verbose=False)
+        with self._inference_lock:
+            dummy_input = torch.randn(1, 3, 224, 224, device=self.device, dtype=torch.float32) / 255
+            _ = self.detection_model(dummy_input, verbose=False, conf=self.confidence_threshold)
         self.logs.write_logs("'DetectFaces' Model is Cached !!",LOG_LEVEL.INFO)
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def detect_face(self, image):
@@ -51,7 +58,8 @@ class DetectFaces:
         Returns:
             dict: A dictionary containing the bounding box of the detected face and the cropped face image.
         """
-        output = self.detection_model(image, verbose=False)
+        with self._inference_lock:
+            output = self.detection_model(image, verbose=False, conf=self.confidence_threshold)
         results = Detections.from_ultralytics(output[0])
         # If a face is detected, crop and return the face region.
         if len(results.data["class_name"]) != 0:

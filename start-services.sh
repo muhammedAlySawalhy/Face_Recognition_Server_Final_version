@@ -47,7 +47,6 @@ show_help() {
     echo -e "  ${BLUE}✅ GUI Services:${NC}     Always started (unless --main-only or --workers-only)"
     echo -e "  ${BLUE}✅ GPU0 Workers:${NC}     Started by default (use --no-gpu0 to disable)"
     echo -e "  ${BLUE}✅ GPU1 Workers:${NC}     Started by default (use --no-gpu1 to disable)"
-    echo -e "  ${BLUE}ℹ️  Monitoring:${NC}     Enable via COMPOSE_PROFILES=monitoring"
     echo -e "  ${BLUE}⚡ Directory Check:${NC}   Skipped by default (use --dir-check to enable)"
     echo -e "  ${BLUE}⚡ Environment Check:${NC} Enabled by default (use --skip-env-check to disable)"
     echo ""

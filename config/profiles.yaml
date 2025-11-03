@@ -25,9 +25,7 @@ profiles:
       retention_hours: 24
     services:
       gateway:
-        websocket:
-          max_queue: 512
-          semaphore_size: 4
+        semaphore_size: 4
       pipelines_manager:
         monitor_gpu_utilisation: false
       pipeline_worker:
@@ -47,22 +45,20 @@ profiles:
       designed_clients: 80
       hard_limit_clients: 96
     pipeline:
-      pipelines_per_server: 2
+      pipelines_per_server: 4
       pipelines_per_gpu: 2
-      max_clients_per_pipeline: 40
+      max_clients_per_pipeline: 20
     rate_limiter:
-      max_clients: 96
-      window_ms: 6000
-      cleanup_ms: 6000
+      max_clients: 200
+      window_ms: 5000
+      cleanup_ms: 5000
     storage:
       provider: minio
       frames_bucket: face-frames
       retention_hours: 24
     services:
       gateway:
-        websocket:
-          max_queue: 1200
-          semaphore_size: 16
+        semaphore_size: 16
       pipelines_manager:
         monitor_gpu_utilisation: true
       pipeline_worker:
@@ -94,9 +90,7 @@ profiles:
       retention_hours: 24
     services:
       gateway:
-        websocket:
-          max_queue: 2400
-          semaphore_size: 32
+        semaphore_size: 32
       pipelines_manager:
         monitor_gpu_utilisation: true
       pipeline_worker:
@@ -129,9 +123,7 @@ profiles:
       retention_hours: 36
     services:
       gateway:
-        websocket:
-          max_queue: 4200
-          semaphore_size: 60
+        semaphore_size: 60
       pipelines_manager:
         monitor_gpu_utilisation: true
       pipeline_worker:
@@ -163,9 +155,7 @@ profiles:
       retention_hours: 24
     services:
       gateway:
-        websocket:
-          max_queue: 6144
-          semaphore_size: 96
+        semaphore_size: 96
       pipelines_manager:
         monitor_gpu_utilisation: true
       pipeline_worker:
@@ -197,9 +187,7 @@ profiles:
       retention_hours: 24
     services:
       gateway:
-        websocket:
-          max_queue: 4096
-          semaphore_size: 64
+        semaphore_size: 64
       pipelines_manager:
         monitor_gpu_utilisation: true
       pipeline_worker:
