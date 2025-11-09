@@ -10,13 +10,16 @@ through RabbitMQ payloads.
 from __future__ import annotations
 
 import io
+import json
 import os
 import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from math import ceil
-from typing import Optional
+from typing import Dict, Optional, Tuple
+
+import numpy as np
 
 from minio import Minio
 from minio.commonconfig import ENABLED
@@ -31,6 +34,7 @@ class StorageSettings:
     provider: str
     frames_bucket: str
     retention_hours: int
+    embeddings_bucket: Optional[str] = None
 
 
 class StorageClient:
@@ -57,7 +61,13 @@ class StorageClient:
             secure=secure,
             region=region,
         )
-        self._ensure_bucket(settings.frames_bucket)
+        self._frames_bucket = settings.frames_bucket
+        self._embeddings_bucket = (
+            settings.embeddings_bucket or settings.frames_bucket
+        )
+        self._ensure_bucket(self._frames_bucket)
+        if self._embeddings_bucket != self._frames_bucket:
+            self._ensure_bucket(self._embeddings_bucket, apply_retention=False)
         # Background cleanup scheduler
         # Periodic cleanup disabled by default because frames are removed immediately after processing.
         self._cleanup_interval = int(os.getenv("STORAGE_CLEANUP_INTERVAL_SECONDS", "120"))
@@ -75,13 +85,17 @@ class StorageClient:
 
     @property
     def frames_bucket(self) -> str:
-        return self.settings.frames_bucket
+        return self._frames_bucket
 
     @property
     def provider(self) -> str:
         return self.settings.provider
 
-    def _ensure_bucket(self, bucket: str) -> None:
+    @property
+    def embeddings_bucket(self) -> str:
+        return self._embeddings_bucket
+
+    def _ensure_bucket(self, bucket: str, apply_retention: bool = True) -> None:
         try:
             bucket_created = False
             if not self._client.bucket_exists(bucket):
@@ -95,6 +109,8 @@ class StorageClient:
                 f"Failed to verify/create bucket '{bucket}': {exc}"
             ) from exc
         else:
+            if not apply_retention:
+                return
             self._ensure_retention_policy(bucket, bucket_created)
 
     def _ensure_retention_policy(self, bucket: str, bucket_created: bool) -> None:
@@ -182,11 +198,21 @@ class StorageClient:
     def store_object(
         self, object_key: str, data: bytes, content_type: Optional[str] = None
     ) -> str:
+        return self._put_bytes(
+            bucket=self.frames_bucket,
+            object_key=object_key,
+            data=data,
+            content_type=content_type,
+        )
+
+    def _put_bytes(
+        self, bucket: str, object_key: str, data: bytes, content_type: Optional[str]
+    ) -> str:
         data_stream = io.BytesIO(data)
         length = len(data)
         try:
             self._client.put_object(
-                self.frames_bucket,
+                bucket,
                 object_key,
                 data_stream,
                 length=length,
@@ -199,27 +225,92 @@ class StorageClient:
             ) from exc
 
     def fetch_object(self, object_key: str) -> bytes:
+        return self._get_object(self.frames_bucket, object_key)
+
+    def _get_object(self, bucket: str, object_key: str) -> bytes:
         try:
-            response = self._client.get_object(self.frames_bucket, object_key)
+            response = self._client.get_object(bucket, object_key)
             try:
                 return response.read()
             finally:
                 response.close()
                 response.release_conn()
         except S3Error as exc:
+            if exc.code == "NoSuchKey":
+                raise FileNotFoundError(object_key) from exc
             raise RuntimeError(
                 f"Failed to download object '{object_key}': {exc}"
             ) from exc
 
     def delete_object(self, object_key: str) -> None:
+        self._delete_from_bucket(self.frames_bucket, object_key)
+
+    def _delete_from_bucket(self, bucket: str, object_key: str) -> None:
         try:
-            self._client.remove_object(self.frames_bucket, object_key)
+            self._client.remove_object(bucket, object_key)
         except S3Error:
             # Non-critical; log and continue.
             self.logger.write_logs(
-                f"Failed to delete object '{object_key}' from bucket '{self.frames_bucket}'",
+                f"Failed to delete object '{object_key}' from bucket '{bucket}'",
                 LOG_LEVEL.WARNING,
             )
+
+    # ------------------------------------------------------------------ Embeddings API
+    def _normalise_segment(self, value: str, default: str = "default") -> str:
+        safe = "".join(
+            ch if ch.isalnum() or ch in {"-", "_"} else "-"
+            for ch in (value or "").lower()
+        ).strip("-_")
+        return safe or default
+
+    def _embedding_key(
+        self, namespace: str, model_signature: str, client_name: str
+    ) -> str:
+        ns = self._normalise_segment(namespace)
+        model = self._normalise_segment(model_signature, "model")
+        client = self._normalise_segment(client_name, "client")
+        return f"embeddings/{ns}/{model}/{client}.json"
+
+    def save_embedding(
+        self,
+        namespace: str,
+        model_signature: str,
+        client_name: str,
+        vector: np.ndarray,
+        metadata: Optional[Dict[str, object]] = None,
+    ) -> str:
+        payload = {
+            "vector": np.asarray(vector, dtype=np.float32).tolist(),
+            "metadata": metadata or {},
+        }
+        key = self._embedding_key(namespace, model_signature, client_name)
+        data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        self._put_bytes(
+            bucket=self.embeddings_bucket,
+            object_key=key,
+            data=data,
+            content_type="application/json",
+        )
+        return key
+
+    def load_embedding(
+        self, namespace: str, model_signature: str, client_name: str
+    ) -> Optional[Tuple[np.ndarray, Dict[str, object]]]:
+        key = self._embedding_key(namespace, model_signature, client_name)
+        try:
+            data = self._get_object(self.embeddings_bucket, key)
+        except FileNotFoundError:
+            return None
+        payload = json.loads(data.decode("utf-8"))
+        vector = np.asarray(payload.get("vector", []), dtype=np.float32)
+        metadata = payload.get("metadata", {})
+        return vector, metadata
+
+    def delete_embedding(
+        self, namespace: str, model_signature: str, client_name: str
+    ) -> None:
+        key = self._embedding_key(namespace, model_signature, client_name)
+        self._delete_from_bucket(self.embeddings_bucket, key)
 
     def _run_periodic_cleanup(self) -> None:
         while not self._cleanup_stop_event.wait(self._cleanup_interval):

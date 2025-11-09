@@ -91,6 +91,10 @@ GUI_ONLY=false
 WORKERS_ONLY=false
 FORCE_START=false
 QUIET=false
+CPU_WORKER_MODE=false
+PIPELINE_WORKER_RUNTIME="nvidia"
+PIPELINE_WORKER_GPU0_DEVICES="0"
+PIPELINE_WORKER_GPU1_DEVICES="1"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -171,12 +175,13 @@ if [ "$FORCE_START" = false ]; then
     fi
 
     if [ "$GPU_COUNT" -lt 1 ]; then
-        if [ "$NO_GPU0" = false ]; then
-            log_info "${YELLOW}⚠️ Skipping GPU0 workers - no NVIDIA GPUs detected${NC}"
-            NO_GPU0=true
-        fi
+        CPU_WORKER_MODE=true
+        PIPELINE_WORKER_RUNTIME="runc"
+        PIPELINE_WORKER_GPU0_DEVICES=""
+        PIPELINE_WORKER_GPU1_DEVICES=""
+        log_info "${YELLOW}⚠️ No NVIDIA GPUs detected - pipeline workers will run on CPU${NC}"
         if [ "$NO_GPU1" = false ]; then
-            log_info "${YELLOW}⚠️ Skipping GPU1 workers - no NVIDIA GPUs detected${NC}"
+            log_info "${YELLOW}⚠️ CPU fallback launches only the GPU0 worker stack${NC}"
             NO_GPU1=true
         fi
     elif [ "$GPU_COUNT" -lt 2 ] && [ "$NO_GPU1" = false ]; then
@@ -186,6 +191,8 @@ if [ "$FORCE_START" = false ]; then
 else
     log_info "${YELLOW}⚠️ --force specified, skipping GPU availability checks${NC}"
 fi
+
+export PIPELINE_WORKER_RUNTIME PIPELINE_WORKER_GPU0_DEVICES PIPELINE_WORKER_GPU1_DEVICES
 
 # Function to create directory if it doesn't exist
 create_dir_if_missing() {
@@ -304,9 +311,13 @@ fi
 
 # Start worker services
 if [ "$MAIN_ONLY" = false ] && [ "$GUI_ONLY" = false ]; then
-    # Start GPU0 workers
+    # Start GPU0 workers (or CPU fallback)
     if [ "$NO_GPU0" = false ]; then
-        log_info "${GREEN}🔄 Starting GPU0 workers (Pipeline IDs: 0-3)...${NC}"
+        if [ "$CPU_WORKER_MODE" = true ]; then
+            log_info "${GREEN}✅ Starting worker stack in CPU mode (Pipeline IDs: 0-3)...${NC}"
+        else
+            log_info "${GREEN}✅ Starting GPU0 workers (Pipeline IDs: 0-3)...${NC}"
+        fi
         docker compose -p fr_workers_gpu0 -f docker-compose_worker_gpu0.yaml up -d
         
         if [ $? -ne 0 ]; then
@@ -317,7 +328,7 @@ if [ "$MAIN_ONLY" = false ] && [ "$GUI_ONLY" = false ]; then
     
     # Start GPU1 workers
     if [ "$NO_GPU1" = false ]; then
-        log_info "${GREEN}🔄 Starting GPU1 workers (Pipeline IDs: 4-7)...${NC}"
+        log_info "${GREEN}✅ Starting GPU1 workers (Pipeline IDs: 4-7)...${NC}"
         docker compose -p fr_workers_gpu1 -f docker-compose_worker_gpu1.yaml up -d
         
         if [ $? -ne 0 ]; then
@@ -326,7 +337,6 @@ if [ "$MAIN_ONLY" = false ] && [ "$GUI_ONLY" = false ]; then
         fi
     fi
 fi
-
 # Get actual ports from running containers
 MAIN_PORT=$(docker compose -p fr_main port gateway 8000 2>/dev/null | cut -d: -f2 || echo "8000")
 GUI_PORT=$(docker compose -p fr_gui port nginx 443 2>/dev/null | cut -d: -f2 || echo "4000")

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3.10
+import hashlib
 import os
 import threading
 import torch
 import tensorflow as tf
-from common_utilities import crop_image_center,LOGGER,LOG_LEVEL, get_paths
+from common_utilities import crop_image_center,LOGGER,LOG_LEVEL, get_paths, get_namespace
 from utilities.files_handler import get_client_image
 import cv2
 import numpy as np
@@ -28,6 +29,7 @@ class FaceDetectionRecognition:
         Recognition_Metric="cosine_similarity",
         Detection_confidence: float = 0.15,
         logger: str = None,
+        storage_client=None,
     ):
         # Logger initialization: Create a file and stream logger if no logger is provided.
         #_________________________________________________________________________#
@@ -40,6 +42,12 @@ class FaceDetectionRecognition:
         else:
             self.logs = LOGGER(None)
         #_________________________________________________________________________#
+        self._storage_client = storage_client
+        self._recognition_model_name = Recognition_model_name
+        self._recognition_model_weights = Recognition_model_weights
+        self.recognition_metric = Recognition_Metric
+        self._embedding_signature = self._build_embedding_signature()
+        self._namespace = get_namespace() or "default"
     #------------------------------------------------------------------------------------------------------------------#
         root_path=get_paths().get("APPLICATION_ROOT_PATH")
         #------------------------------------------------------
@@ -119,6 +127,69 @@ class FaceDetectionRecognition:
         self._ref_cache_lock = threading.Lock()
         self._ref_embeddings: Dict[str, np.ndarray] = {}
         self._ref_versions: Dict[str, float] = {}
+    #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    def _current_namespace(self) -> str:
+        namespace = get_namespace()
+        if namespace:
+            self._namespace = namespace
+        return self._namespace
+
+    def _build_embedding_signature(self) -> str:
+        payload = "|".join(
+            [
+                self._recognition_model_name or "unknown",
+                self._recognition_model_weights or "weights",
+                self.recognition_metric or "metric",
+            ]
+        )
+        return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+    def _load_embedding_from_storage(
+        self, client_name: str, source_mtime: float
+    ) -> Optional[np.ndarray]:
+        if not self._storage_client:
+            return None
+        record = self._storage_client.load_embedding(
+            self._current_namespace(), self._embedding_signature, client_name
+        )
+        if not record:
+            return None
+        vector, metadata = record
+        stored_mtime = metadata.get("source_mtime")
+        if stored_mtime != source_mtime:
+            return None
+        return vector
+
+    def _persist_embedding_to_storage(
+        self, client_name: str, embedding: np.ndarray, source_mtime: float, image_path: str
+    ) -> None:
+        if not self._storage_client:
+            return
+        metadata = {
+            "model_signature": self._embedding_signature,
+            "model_name": self._recognition_model_name,
+            "model_weights": self._recognition_model_weights,
+            "metric": self.recognition_metric,
+            "source_mtime": source_mtime,
+            "source_image": image_path,
+        }
+        try:
+            self._storage_client.save_embedding(
+                self._current_namespace(),
+                self._embedding_signature,
+                client_name,
+                embedding,
+                metadata=metadata,
+            )
+            self.logs.write_logs(
+                f"{client_name}-Reference embedding stored in MinIO cache",
+                LOG_LEVEL.DEBUG,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logs.write_logs(
+                f"{client_name}-Failed to persist embedding cache: {exc}",
+                LOG_LEVEL.WARNING,
+            )
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def __del__(self):
         if hasattr(self, "Detect_Faces"):
@@ -251,6 +322,19 @@ class FaceDetectionRecognition:
                 )
                 return self._ref_embeddings[client_name]
 
+        storage_embedding = self._load_embedding_from_storage(
+            client_name, current_version
+        )
+        if storage_embedding is not None and storage_embedding.size:
+            with self._ref_cache_lock:
+                self._ref_embeddings[client_name] = storage_embedding
+                self._ref_versions[client_name] = current_version
+            self.logs.write_logs(
+                f"{client_name}-Loaded reference embedding from MinIO cache",
+                LOG_LEVEL.INFO,
+            )
+            return storage_embedding.copy()
+
         ref_image = get_client_image(client_name)
         if ref_image is None or ref_image.size == 0:
             self.logs.write_logs(
@@ -277,6 +361,9 @@ class FaceDetectionRecognition:
         with self._ref_cache_lock:
             self._ref_embeddings[client_name] = embedding
             self._ref_versions[client_name] = current_version
+        self._persist_embedding_to_storage(
+            client_name, embedding, current_version, image_path
+        )
         self.logs.write_logs(
             f"{client_name}-Reference embedding refreshed (mtime={current_version})",
             LOG_LEVEL.INFO,

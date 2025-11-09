@@ -200,7 +200,11 @@ class PipeLine(Base_process):
     def ModelsInitiation(self):
         models_manager = None
         try:
-            models_manager = ModelsManager(**self.model_init_param, logger=self.logs)
+            models_manager = ModelsManager(
+                **self.model_init_param,
+                logger=self.logs,
+                storage_client=self.storage_client,
+            )
         except Exception:
             track_error = traceback.format_exc()
             self.logs.write_logs(

@@ -31,7 +31,8 @@ class ModelsManager:
                 Object_class_number:int=67,
                 Object_threshold:int=65,
                 #Logger
-                logger:Union[str]=None
+                logger:Union[str]=None,
+                storage_client=None
                 ):
         #_________________________________________________________________________#
         if isinstance(logger,str):
@@ -72,7 +73,8 @@ class ModelsManager:
                                 Recognition_Metric=Recognition_Metric,
                                 Anti_Spoof_threshold=Anti_Spoof_threshold,
                                 #Logger
-                                logger=self.logs
+                                logger=self.logs,
+                                storage_client=storage_client
                                 
                                 )
         #_________________________________________________________________________#
@@ -105,5 +107,4 @@ class ModelsManager:
     def IS_INITIALIZE(self):
         return self.__IS_INITIALIZE
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 

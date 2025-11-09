@@ -141,6 +141,9 @@ class ConfigManager:
             provider=str(storage_cfg.get("provider", "minio")),
             frames_bucket=str(storage_cfg.get("frames_bucket", "face-frames")),
             retention_hours=int(storage_cfg.get("retention_hours", 24)),
+            embeddings_bucket=str(
+                storage_cfg.get("embeddings_bucket", storage_cfg.get("frames_bucket", "face-frames"))
+            ),
         )
 
     @classmethod

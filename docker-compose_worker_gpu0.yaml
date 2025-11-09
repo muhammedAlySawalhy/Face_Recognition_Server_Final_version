@@ -5,10 +5,10 @@ services:
   pipeline-worker-0:
     image: fr-server-pipeline_worker_service:latest
     container_name: fr_pipeline_worker_gpu0_0
-    runtime: nvidia
+    runtime: ${PIPELINE_WORKER_RUNTIME:-nvidia}
     environment:
       - NAMESPACE=${SERVER_NAME}
-      - NVIDIA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=${PIPELINE_WORKER_GPU0_DEVICES:-0}
       - SERVICE_TYPE=pipeline-worker
       - PIPELINE_ID=0
       - RMQ_URL=amqp://admin:admin123@rmq_Server:5672
@@ -43,10 +43,10 @@ services:
   pipeline-worker-1:
     image: fr-server-pipeline_worker_service:latest
     container_name: fr_pipeline_worker_gpu0_1
-    runtime: nvidia
+    runtime: ${PIPELINE_WORKER_RUNTIME:-nvidia}
     environment:
       - NAMESPACE=${SERVER_NAME}
-      - NVIDIA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=${PIPELINE_WORKER_GPU0_DEVICES:-0}
       - SERVICE_TYPE=pipeline-worker
       - PIPELINE_ID=1
       - RMQ_URL=amqp://admin:admin123@rmq_Server:5672
@@ -81,10 +81,10 @@ services:
   pipeline-worker-2:
     image: fr-server-pipeline_worker_service:latest
     container_name: fr_pipeline_worker_gpu0_2
-    runtime: nvidia
+    runtime: ${PIPELINE_WORKER_RUNTIME:-nvidia}
     environment:
       - NAMESPACE=${SERVER_NAME}
-      - NVIDIA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=${PIPELINE_WORKER_GPU0_DEVICES:-0}
       - SERVICE_TYPE=pipeline-worker
       - PIPELINE_ID=2
       - MaxClientPerPipeline=30
@@ -120,10 +120,10 @@ services:
   pipeline-worker-3:
     image: fr-server-pipeline_worker_service:latest
     container_name: fr_pipeline_worker_gpu0_3
-    runtime: nvidia
+    runtime: ${PIPELINE_WORKER_RUNTIME:-nvidia}
     environment:
       - NAMESPACE=${SERVER_NAME}
-      - NVIDIA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=${PIPELINE_WORKER_GPU0_DEVICES:-0}
       - SERVICE_TYPE=pipeline-worker
       - PIPELINE_ID=3
       - MaxClientPerPipeline=30
