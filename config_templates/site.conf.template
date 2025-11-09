@@ -1,0 +1,18 @@
+# /etc/nginx/templates/site.conf.template
+server {
+    listen ${LISTEN_PORT} ssl;        # e.g., 4000 or 443
+    server_name ${SERVER_NAME};       # IP or domain clients use
+
+    # TLS cert & key (mount them into /etc/nginx/certs)
+    ssl_certificate     /etc/nginx/certs/fullchain.crt; # e.g., /etc/nginx/ssl/fullchain.crt
+    ssl_certificate_key /etc/nginx/certs/server.key;  # e.g., /etc/nginx/ssl/server.key
+
+
+    location / {
+        proxy_pass http://${APP_HOST}:${APP_PORT};
+
+        # Pass client info to backend - FIXED: Use nginx variables directly
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+    }
+}

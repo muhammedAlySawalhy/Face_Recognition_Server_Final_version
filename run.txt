@@ -1,0 +1,31 @@
+docker build --cache-from fr-server-gateway_server_service:latest \
+  -f services/gateway_server_service/Dockerfile \
+  --build-arg SERVICE_NAME=services/gateway_server_service \
+  -t fr-server-gateway_server_service:latest .
+
+docker build --cache-from fr-server-pipelines_manager_service:latest \
+  -f services/pipelines_manager_service/Dockerfile \
+  --build-arg SERVICE_NAME=services/pipelines_manager_service \
+  -t fr-server-pipelines_manager_service:latest .
+
+docker build --cache-from fr-server-decision_manager_service:latest \
+  -f services/decision_manager_service/Dockerfile \
+  --build-arg SERVICE_NAME=services/decision_manager_service \
+  -t fr-server-decision_manager_service:latest .
+
+docker build --cache-from fr-server-server_manager_service:latest \
+  -f services/server_manager_service/Dockerfile \
+  --build-arg SERVICE_NAME=services/server_manager_service \
+  -t fr-server-server_manager_service:latest .
+
+docker build --cache-from fr-server-pipeline_worker_service:latest \
+  -f services/pipeline_worker_service/Dockerfile \
+  --build-arg SERVICE_NAME=services/pipeline_worker_service \
+  -t fr-server-pipeline_worker_service:latest .
+
+docker compose -p fr_main -f docker-compose_main.yaml up -d
+docker compose -p fr_workers_gpu0 -f docker-compose_worker_gpu0.yaml up -d
+docker compose -p fr_workers_gpu1 -f docker-compose_worker_gpu1.yaml up -d   # only if you use GPU1
+
+locust -f tests/load/locust_ws.py --headless --users 80 --spawn-rate 1 --run-time 2h
+docker save fr-server-pipeline_worker_service:latest -o pipeline_worker_service.tar

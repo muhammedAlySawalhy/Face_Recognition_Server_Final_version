@@ -1,0 +1,16 @@
+__*/
+Data/
+logs/
+Models_Weights/
+build/
+test/
+*.*/
+# GUI/
+*.backup
+*.json
+*.zip
+*.env
+*.log
+*.tar
+*.tar.*
+certs/

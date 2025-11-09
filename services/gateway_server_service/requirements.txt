@@ -1,0 +1,5 @@
+# Gateway Service Requirements
+# Service-specific dependencies only (common deps are in requirements-common.txt)
+
+# WebSocket support for gateway functionality
+websockets>=10.0

@@ -1,0 +1,5 @@
+# Decision Manager Service Requirements
+# Service-specific dependencies only (common deps are in requirements-common.txt)
+
+# No additional service-specific dependencies required
+# This service only uses common utilities

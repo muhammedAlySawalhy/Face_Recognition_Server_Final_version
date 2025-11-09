@@ -1,0 +1,194 @@
+profiles:
+  dev-1gpu-5gb:
+    description: >
+      Development profile targeting a single workstation GPU with roughly 5 GB VRAM.
+      Optimised for iterative testing with a handful of concurrent clients.
+    hardware:
+      servers: 1
+      gpus_per_server: 1
+      total_gpus: 1
+      gpu_memory_gb: 5
+    capacity:
+      designed_clients: 4
+      hard_limit_clients: 4
+    pipeline:
+      pipelines_per_server: 1
+      pipelines_per_gpu: 1
+      max_clients_per_pipeline: 4
+    rate_limiter:
+      max_clients: 4
+      window_ms: 12000
+      cleanup_ms: 12000
+    storage:
+      provider: minio
+      frames_bucket: face-frames
+      retention_hours: 24
+    services:
+      gateway:
+        semaphore_size: 4
+      pipelines_manager:
+        monitor_gpu_utilisation: false
+      pipeline_worker:
+        warmup_batch: false
+
+  prod-1gpu-24gb:
+    description: >
+      Production profile for a single 24 GB GPU. Suitable for medium-sized deployments
+      that require higher concurrency than the development profile while keeping a
+      single-node footprint.
+    hardware:
+      servers: 1
+      gpus_per_server: 1
+      total_gpus: 1
+      gpu_memory_gb: 24
+    capacity:
+      designed_clients: 80
+      hard_limit_clients: 96
+    pipeline:
+      pipelines_per_server: 4
+      pipelines_per_gpu: 2
+      max_clients_per_pipeline: 20
+    rate_limiter:
+      max_clients: 200
+      window_ms: 5000
+      cleanup_ms: 5000
+    storage:
+      provider: minio
+      frames_bucket: face-frames
+      retention_hours: 24
+    services:
+      gateway:
+        semaphore_size: 16
+      pipelines_manager:
+        monitor_gpu_utilisation: true
+      pipeline_worker:
+        warmup_batch: true
+
+  prod-2gpu-24gb:
+    description: >
+      Production profile for a single server hosting two 24 GB GPUs.
+      Suitable for medium deployments (~160 active clients) with room for burst traffic.
+    hardware:
+      servers: 1
+      gpus_per_server: 2
+      total_gpus: 2
+      gpu_memory_gb: 24
+    capacity:
+      designed_clients: 140
+      hard_limit_clients: 160
+    pipeline:
+      pipelines_per_server: 4
+      pipelines_per_gpu: 2
+      max_clients_per_pipeline: 40
+    rate_limiter:
+      max_clients: 160
+      window_ms: 6000
+      cleanup_ms: 6000
+    storage:
+      provider: minio
+      frames_bucket: face-frames
+      retention_hours: 24
+    services:
+      gateway:
+        semaphore_size: 32
+      pipelines_manager:
+        monitor_gpu_utilisation: true
+      pipeline_worker:
+        warmup_batch: true
+
+  prod-2gpu-48gb:
+    description: >
+      Balanced profile for a single server equipped with two 48 GB GPUs.
+      Tuned for sustained workloads of ~220 concurrent clients with generous burst
+      headroom so the hardware is never over-stressed, even during peak surges.
+    hardware:
+      servers: 1
+      gpus_per_server: 2
+      total_gpus: 2
+      gpu_memory_gb: 48
+    capacity:
+      designed_clients: 300
+      hard_limit_clients: 320
+    pipeline:
+      pipelines_per_server: 16
+      pipelines_per_gpu: 8
+      max_clients_per_pipeline: 20
+    rate_limiter:
+      max_clients: 320
+      window_ms: 5000
+      cleanup_ms: 5000
+    storage:
+      provider: minio
+      frames_bucket: face-frames
+      retention_hours: 36
+    services:
+      gateway:
+        semaphore_size: 60
+      pipelines_manager:
+        monitor_gpu_utilisation: true
+      pipeline_worker:
+        warmup_batch: true
+
+  prod-4gpu-48gb:
+    description: >
+      High capacity profile for a single server with four 48 GB GPUs. Designed for
+      demanding deployments requiring large model batches and aggressive anti-spoofing.
+    hardware:
+      servers: 1
+      gpus_per_server: 4
+      total_gpus: 4
+      gpu_memory_gb: 48
+    capacity:
+      designed_clients: 900
+      hard_limit_clients: 1024
+    pipeline:
+      pipelines_per_server: 16
+      pipelines_per_gpu: 4
+      max_clients_per_pipeline: 64
+    rate_limiter:
+      max_clients: 1024
+      window_ms: 5000
+      cleanup_ms: 5000
+    storage:
+      provider: minio
+      frames_bucket: face-frames
+      retention_hours: 24
+    services:
+      gateway:
+        semaphore_size: 96
+      pipelines_manager:
+        monitor_gpu_utilisation: true
+      pipeline_worker:
+        warmup_batch: true
+
+  prod-dual-server-4gpu:
+    description: >
+      High-availability profile spanning two servers, each with two 24 GB GPUs (4 GPUs total).
+      Designed to sustain 500 authenticated endpoints with anti-spoofing and object detection.
+    hardware:
+      servers: 2
+      gpus_per_server: 2
+      total_gpus: 4
+      gpu_memory_gb: 24
+    capacity:
+      designed_clients: 500
+      hard_limit_clients: 512
+    pipeline:
+      pipelines_per_server: 8
+      pipelines_per_gpu: 2
+      max_clients_per_pipeline: 64
+    rate_limiter:
+      max_clients: 512
+      window_ms: 5500
+      cleanup_ms: 5500
+    storage:
+      provider: minio
+      frames_bucket: face-frames
+      retention_hours: 24
+    services:
+      gateway:
+        semaphore_size: 64
+      pipelines_manager:
+        monitor_gpu_utilisation: true
+      pipeline_worker:
+        warmup_batch: true
