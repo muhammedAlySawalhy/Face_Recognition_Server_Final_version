@@ -37,6 +37,9 @@ services:
   #-------------------------------------------------------------------------------------------------------------#
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
   proxy:
+    build:
+      context: .
+      dockerfile: services/gui_proxy_service/Dockerfile
     image: fr_gui_server_proxy:v1.0
     container_name: fr_gui_server_proxy
     environment:

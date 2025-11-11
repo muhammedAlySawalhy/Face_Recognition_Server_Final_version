@@ -33,6 +33,7 @@ import json
 import os
 import random
 import time
+from datetime import datetime
 from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
@@ -46,7 +47,7 @@ from websocket import (
     WebSocketTimeoutException,
     create_connection,
 )
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 def _str_to_bool(value: Optional[str], default: bool = False) -> bool:
@@ -84,6 +85,147 @@ LABEL_EXPECTATIONS: Dict[str, Optional[str]] = {
 DISABLE_SAMPLE_CACHE = _str_to_bool(os.getenv("LOCUST_WS_DISABLE_CACHE"), False)
 CACHE_BUSTER = os.getenv("LOCUST_WS_CACHE_BUSTER") or None
 DEFAULT_DATASET_SUBDIRS: Tuple[str, ...] = ("test_images", "Users_DataBase")
+SYNTHETIC_SAMPLE_DEFINITIONS: Tuple[Dict[str, object], ...] = (
+    {
+        "user_name": "client_genuine",
+        "label": "genuine",
+        "task": "face_recognition",
+        "expected_outcome": "allow",
+        "text": "Client 001\nGenuine",
+        "background": (16, 84, 53),
+        "accent": (220, 255, 220),
+        "overlay": "face",
+    },
+    {
+        "user_name": "client_spoof",
+        "label": "spoof",
+        "task": "face_recognition",
+        "expected_outcome": "deny",
+        "text": "Spoof",
+        "background": (120, 0, 0),
+        "accent": (255, 222, 89),
+        "overlay": "spoof",
+    },
+    {
+        "user_name": "client_mismatch",
+        "label": "genuine",
+        "task": "face_recognition",
+        "expected_outcome": "allow",
+        "text": "Client 002",
+        "background": (0, 51, 102),
+        "accent": (200, 229, 255),
+        "overlay": "face",
+    },
+    {
+        "user_name": "client_phone",
+        "label": "phone_positive",
+        "task": "object_detection",
+        "expected_outcome": "deny",
+        "text": "Phone",
+        "background": (20, 20, 20),
+        "accent": (0, 200, 255),
+        "overlay": "phone",
+    },
+    {
+        "user_name": "client_phone",
+        "label": "phone_negative",
+        "task": "object_detection",
+        "expected_outcome": None,
+        "text": "No Phone",
+        "background": (45, 45, 45),
+        "accent": (150, 150, 150),
+        "overlay": None,
+    },
+    {
+        "user_name": "client_no_face",
+        "label": "no_face",
+        "task": "face_detection",
+        "expected_outcome": "deny",
+        "text": "No Face",
+        "background": (64, 32, 96),
+        "accent": (241, 169, 255),
+        "overlay": None,
+    },
+)
+
+
+def _dataset_has_images(dataset_dir: Path) -> bool:
+    if not dataset_dir.exists():
+        return False
+    for _ in dataset_dir.rglob("*.jpg"):
+        return True
+    for _ in dataset_dir.rglob("*.jpeg"):
+        return True
+    for _ in dataset_dir.rglob("*.png"):
+        return True
+    return False
+
+
+def _render_synthetic_image(image_path: Path, sample: Dict[str, object]) -> None:
+    background = sample.get("background", (32, 32, 32))
+    accent = sample.get("accent", (255, 255, 255))
+    image = Image.new("RGB", (240, 240), background)
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((10, 10, 230, 230), outline=accent, width=3)
+    overlay = sample.get("overlay")
+    if overlay == "face":
+        draw.ellipse((70, 50, 170, 190), outline=accent, width=3)
+        draw.ellipse((95, 90, 115, 110), fill=accent)
+        draw.ellipse((125, 90, 145, 110), fill=accent)
+        draw.arc((100, 130, 140, 170), 10, 170, fill=accent, width=3)
+    elif overlay == "spoof":
+        for offset in range(-240, 240, 25):
+            draw.line((offset, 0, offset + 240, 240), fill=accent, width=4)
+    elif overlay == "phone":
+        draw.rectangle((90, 40, 150, 200), outline=accent, width=4)
+        draw.rectangle((96, 46, 144, 194), fill=(0, 0, 0))
+        draw.ellipse((117, 185, 123, 191), fill=accent)
+
+    text = sample.get("text")
+    if text:
+        draw.text((14, 12), str(text), fill=accent)
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(image_path, format="JPEG", quality=95)
+
+
+def _generate_synthetic_dataset(dataset_dir: Path) -> None:
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    entries: List[Dict[str, object]] = []
+    for idx, sample in enumerate(SYNTHETIC_SAMPLE_DEFINITIONS):
+        user = str(sample["user_name"])
+        label = str(sample["label"])
+        filename = f"{label}_{idx:02d}.jpg"
+        relative_path = Path(user) / label / filename
+        image_path = dataset_dir / relative_path
+        if not image_path.exists():
+            _render_synthetic_image(image_path, sample)
+        entries.append(
+            {
+                "id": idx,
+                "user_name": user,
+                "label": label,
+                "task": sample.get("task", "face_recognition"),
+                "path": str(relative_path),
+                "tags": list(sample.get("tags") or [label]),
+                "expected_outcome": sample.get("expected_outcome"),
+                "source": "synthetic",
+            }
+        )
+    manifest_path = dataset_dir / "manifest.json"
+    manifest = {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "entries": entries,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+
+
+def _ensure_sample_dataset(dataset_dir: Path) -> None:
+    dataset_override = os.getenv("LOCUST_WS_DATASET_DIR")
+    if dataset_override:
+        return
+    if _dataset_has_images(dataset_dir):
+        return
+    _generate_synthetic_dataset(dataset_dir)
 
 
 @dataclass
@@ -324,16 +466,14 @@ def _resolve_dataset_dir() -> Path:
         return dataset_dir
 
     base_data_dir = Path(__file__).resolve().parents[2] / "Data"
+    base_data_dir.mkdir(parents=True, exist_ok=True)
     for subdir in DEFAULT_DATASET_SUBDIRS:
         candidate = (base_data_dir / subdir).resolve()
         if candidate.exists():
             return candidate
-
-    raise FileNotFoundError(
-        f"No default sample directories found under {base_data_dir}. "
-        "Set LOCUST_WS_DATASET_DIR to point at your test images."
-    )
-
+    fallback = (base_data_dir / DEFAULT_DATASET_SUBDIRS[0]).resolve()
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
 
 def _build_sample_loader_config(dataset_dir: Path) -> SampleLoaderConfig:
     manifest_env = os.getenv("LOCUST_WS_MANIFEST_PATH")
@@ -420,6 +560,7 @@ def _load_base_payloads_cached(config: SampleLoaderConfig) -> Tuple[SamplePayloa
 
 def _load_samples() -> List[SamplePayload]:
     dataset_dir = _resolve_dataset_dir()
+    _ensure_sample_dataset(dataset_dir)
     config = _build_sample_loader_config(dataset_dir)
     if DISABLE_SAMPLE_CACHE:
         payloads = _load_base_payloads_direct(config)

@@ -62,8 +62,8 @@ def get_models_parameters(models_weights_root_path):
         "Recognition_Metric": "cosine_similarity",
         "Object_class_number": 67,
         "Recognition_Threshold": 0.3,
-        "Object_threshold": 65,
-        "Anti_Spoof_threshold": 0.99,
+        "Object_threshold": 45,
+        "Anti_Spoof_threshold": 0.35,
     }
     config_file_path = os.path.join(models_weights_root_path, "models_settings.yaml")
     if not os.path.exists(config_file_path):

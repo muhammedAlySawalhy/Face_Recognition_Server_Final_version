@@ -113,7 +113,11 @@ class ConfigManager:
         )
         pipeline = profile_data["pipeline"]
         pipelines_per_server = int(pipeline["pipelines_per_server"])
-        total_pipelines = pipelines_per_server * self._hardware.servers
+        total_pipelines = pipeline.get("total_pipelines")
+        if total_pipelines is None:
+            total_pipelines = pipelines_per_server * self._hardware.servers
+        else:
+            total_pipelines = int(total_pipelines)
         max_clients_per_pipeline = int(pipeline["max_clients_per_pipeline"])
         total_capacity = total_pipelines * max_clients_per_pipeline
         # Honour explicit hard limit if defined
@@ -140,7 +144,7 @@ class ConfigManager:
         self._storage_settings = StorageSettings(
             provider=str(storage_cfg.get("provider", "minio")),
             frames_bucket=str(storage_cfg.get("frames_bucket", "face-frames")),
-            retention_hours=int(storage_cfg.get("retention_hours", 24)),
+            retention_hours=int(storage_cfg.get("retention_hours", 1)),
         )
 
     @classmethod

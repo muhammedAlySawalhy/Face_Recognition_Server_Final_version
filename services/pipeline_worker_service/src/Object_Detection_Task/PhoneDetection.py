@@ -10,7 +10,7 @@ class PhoneDetection:
     def __init__(
         self,
         ObjectDetection_model_weights: str=None,
-        torch_Models_device: str = "cpu",
+        torch_Models_device: str = "gpu",
         Models_Weights_dir: str = "Models_Weights",
         Object_class_number:int=67,
         Object_threshold:int=65,

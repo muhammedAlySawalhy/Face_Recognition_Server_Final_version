@@ -330,8 +330,7 @@ class Server(Base_process):
             self.logs.write_logs(
                 f"Rate limit exceeded for connection {limiter_key}", LOG_LEVEL.WARNING
             )
-            if client_name and (should_cleanup or websocket.closed):
-                self.__cleanup_client(client_name)
+          
             return
         try:
             while not self.stop_process:

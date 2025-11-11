@@ -14,6 +14,7 @@ profiles:
     pipeline:
       pipelines_per_server: 1
       pipelines_per_gpu: 1
+      total_pipelines: 1
       max_clients_per_pipeline: 4
     rate_limiter:
       max_clients: 4
@@ -22,7 +23,7 @@ profiles:
     storage:
       provider: minio
       frames_bucket: face-frames
-      retention_hours: 24
+      retention_hours: 1
     services:
       gateway:
         semaphore_size: 4
@@ -42,20 +43,21 @@ profiles:
       total_gpus: 1
       gpu_memory_gb: 24
     capacity:
-      designed_clients: 80
-      hard_limit_clients: 96
+      designed_clients: 140
+      hard_limit_clients: 160
     pipeline:
-      pipelines_per_server: 4
-      pipelines_per_gpu: 2
+      pipelines_per_server: 6
+      pipelines_per_gpu: 6
+      total_pipelines: 6
       max_clients_per_pipeline: 20
     rate_limiter:
-      max_clients: 200
+      max_clients: 160
       window_ms: 5000
       cleanup_ms: 5000
     storage:
       provider: minio
       frames_bucket: face-frames
-      retention_hours: 24
+      retention_hours: 1
     services:
       gateway:
         semaphore_size: 16
@@ -79,6 +81,7 @@ profiles:
     pipeline:
       pipelines_per_server: 4
       pipelines_per_gpu: 2
+      total_pipelines: 4
       max_clients_per_pipeline: 40
     rate_limiter:
       max_clients: 160
@@ -87,12 +90,12 @@ profiles:
     storage:
       provider: minio
       frames_bucket: face-frames
-      retention_hours: 24
+      retention_hours: 1
     services:
       gateway:
         semaphore_size: 32
       pipelines_manager:
-        monitor_gpu_utilisation: true
+        monitor_gpu_utilisation: false
       pipeline_worker:
         warmup_batch: true
 
@@ -112,6 +115,7 @@ profiles:
     pipeline:
       pipelines_per_server: 16
       pipelines_per_gpu: 8
+      total_pipelines: 16
       max_clients_per_pipeline: 20
     rate_limiter:
       max_clients: 320
@@ -120,12 +124,12 @@ profiles:
     storage:
       provider: minio
       frames_bucket: face-frames
-      retention_hours: 36
+      retention_hours: 1
     services:
       gateway:
         semaphore_size: 60
       pipelines_manager:
-        monitor_gpu_utilisation: true
+        monitor_gpu_utilisation: false
       pipeline_worker:
         warmup_batch: true
 
@@ -144,6 +148,7 @@ profiles:
     pipeline:
       pipelines_per_server: 16
       pipelines_per_gpu: 4
+      total_pipelines: 16
       max_clients_per_pipeline: 64
     rate_limiter:
       max_clients: 1024
@@ -152,12 +157,12 @@ profiles:
     storage:
       provider: minio
       frames_bucket: face-frames
-      retention_hours: 24
+      retention_hours: 1
     services:
       gateway:
         semaphore_size: 96
       pipelines_manager:
-        monitor_gpu_utilisation: true
+        monitor_gpu_utilisation: false
       pipeline_worker:
         warmup_batch: true
 
@@ -176,6 +181,7 @@ profiles:
     pipeline:
       pipelines_per_server: 8
       pipelines_per_gpu: 2
+      total_pipelines: 16
       max_clients_per_pipeline: 64
     rate_limiter:
       max_clients: 512
@@ -184,11 +190,11 @@ profiles:
     storage:
       provider: minio
       frames_bucket: face-frames
-      retention_hours: 24
+      retention_hours: 1
     services:
       gateway:
         semaphore_size: 64
       pipelines_manager:
-        monitor_gpu_utilisation: true
+        monitor_gpu_utilisation: false
       pipeline_worker:
         warmup_batch: true

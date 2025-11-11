@@ -43,6 +43,11 @@ class ModelsManager:
         else:
             self.logs = LOGGER(None)
         #_________________________________________________________________________#
+        normalized_anti_spoof_threshold = (
+            float(Anti_Spoof_threshold) / 100.0
+            if isinstance(Anti_Spoof_threshold, (int, float)) and Anti_Spoof_threshold > 1
+            else float(Anti_Spoof_threshold or 0.35)
+        )
         self.__phone_model = PhoneDetection(
                                 # Models Weights
                                 Models_Weights_dir=Models_Weights_dir,
@@ -70,7 +75,7 @@ class ModelsManager:
                                 Recognition_model_name=Recognition_model_name,
                                 Recognition_Threshold=Recognition_Threshold,
                                 Recognition_Metric=Recognition_Metric,
-                                Anti_Spoof_threshold=Anti_Spoof_threshold,
+                                Anti_Spoof_threshold=normalized_anti_spoof_threshold,
                                 #Logger
                                 logger=self.logs
                                 
@@ -105,5 +110,4 @@ class ModelsManager:
     def IS_INITIALIZE(self):
         return self.__IS_INITIALIZE
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 

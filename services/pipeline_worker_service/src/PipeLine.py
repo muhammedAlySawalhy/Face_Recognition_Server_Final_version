@@ -5,6 +5,8 @@ import time
 import traceback
 import cv2
 import numpy as np
+import functools
+from concurrent.futures import ThreadPoolExecutor
 from common_utilities import LOGGER, LOG_LEVEL, Base_process, Async_RMQ
 from .ModelsManager import ModelsManager
 
@@ -33,6 +35,8 @@ class PipeLine(Base_process):
         self.model_init_param = models_init_parameters
         self.storage_client = storage_client
         self._rmq = Async_RMQ(logger=self.logs)
+        self._phone_executor: ThreadPoolExecutor | None = None
+        self._face_executor: ThreadPoolExecutor | None = None
 
     def _hydrate_payload(self, payload: dict) -> dict:
         client_data = dict(payload)
@@ -55,25 +59,19 @@ class PipeLine(Base_process):
                 client_data["user_image"] = None
         return client_data
 
-    def _delete_frame_if_needed(self, object_key: str | None) -> None:
-        if not object_key or not self.storage_client:
-            return
-        try:
-            self.storage_client.delete_object(object_key)
-        except Exception as exc:
-            self.logs.write_logs(
-                f"Failed to delete frame '{object_key}': {exc}", LOG_LEVEL.WARNING
-            )
+    
 
     async def _handle_phone(self, payload, models_manager: ModelsManager):
         object_key = payload.get("image_object_key")
         client_data = None
         try:
-            client_data = await asyncio.to_thread(self._hydrate_payload, payload)
+            client_data = await self._run_in_executor(
+                self._phone_executor, self._hydrate_payload, payload
+            )
             client_data.pop("ref_image", None)
             start_time = time.time()
-            result = await asyncio.to_thread(
-                models_manager.phone_model_pipeline, client_data
+            result = await self._run_in_executor(
+                self._phone_executor, models_manager.phone_model_pipeline, client_data
             )
             publish_payload = {**result, **client_data}
             publish_payload.pop("user_image", None)
@@ -101,17 +99,19 @@ class PipeLine(Base_process):
         finally:
             if client_data:
                 client_data.pop("user_image", None)
-            self._delete_frame_if_needed(object_key)
+          
 
     async def _handle_face(self, payload, models_manager: ModelsManager):
         object_key = payload.get("image_object_key")
         client_data = None
         try:
-            client_data = await asyncio.to_thread(self._hydrate_payload, payload)
+            client_data = await self._run_in_executor(
+                self._face_executor, self._hydrate_payload, payload
+            )
             client_data.pop("ref_image", None)
             start_time = time.time()
-            result = await asyncio.to_thread(
-                models_manager.face_model_pipeline, client_data
+            result = await self._run_in_executor(
+                self._face_executor, models_manager.face_model_pipeline, client_data
             )
             publish_payload = {**result, **client_data}
             publish_payload.pop("user_image", None)
@@ -139,7 +139,7 @@ class PipeLine(Base_process):
         finally:
             if client_data:
                 client_data.pop("user_image", None)
-            self._delete_frame_if_needed(object_key)
+          
 
     def _register_consumers(self, models_manager: ModelsManager):
         @self._rmq.consume_messages(
@@ -179,13 +179,38 @@ class PipeLine(Base_process):
             queue_arguments=queue_args,
         )
 
+    def _initialise_executors(self):
+        if self._phone_executor is None:
+            self._phone_executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix=f"{self.pipeline_name}-phone"
+            )
+        if self._face_executor is None:
+            self._face_executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix=f"{self.pipeline_name}-face"
+            )
+
+    def _shutdown_executors(self):
+        for executor in (self._phone_executor, self._face_executor):
+            if executor is not None:
+                executor.shutdown(wait=True)
+        self._phone_executor = None
+        self._face_executor = None
+
+    async def _run_in_executor(self, executor, func, *args, **kwargs):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            executor, functools.partial(func, *args, **kwargs)
+        )
+
     async def _run_async(self):
+        self._initialise_executors()
         models_manager = self.ModelsInitiation()
         if models_manager is None:
             self.logs.write_logs(
                 f"Failed to create models manager for {self.pipeline_name}",
                 LOG_LEVEL.CRITICAL,
             )
+            self._shutdown_executors()
             return
         await self._init_rmq()
         self._register_consumers(models_manager)
@@ -193,6 +218,7 @@ class PipeLine(Base_process):
             await self._rmq.start_consuming()
         finally:
             await self._rmq.close()
+            self._shutdown_executors()
 
     def run(self):
         asyncio.run(self._run_async())

@@ -27,33 +27,86 @@ class DetectFaces:
         else:
             self.logs = LOGGER(None)
         #_________________________________________________________________________#
-        self.device = torch.device(Model_device) if not isinstance(Model_device, torch.device) else Model_device
+        self.device = self._resolve_device(Model_device)
         self.model_weights_path = model_weights_path
         self.confidence_threshold = max(0.0, min(1.0, confidence))
-        self._inference_lock = threading.Lock()
-        # Load the YOLO face detection model with the specified weights.
-        self.detection_model:ultralytics.YOLO = (
-            ultralytics.YOLO(model_weights_path, verbose=False)
+        self._thread_local = threading.local()
+        self._models_registry = []
+
+        base_model = self._build_detection_model()
+        self._thread_local.model = base_model
+        self.logs.write_logs(
+            f"Face detection YOLO model running on '{self.device}'.",
+            LOG_LEVEL.INFO,
+        )
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    def __del__(self):
+        if hasattr(self, "_models_registry"):
+            for model in self._models_registry:
+                try:
+                    del model
+                except Exception:
+                    pass
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    def _resolve_device(self, model_device: Union[str, torch.device, None]) -> torch.device:
+        """
+        Normalize the requested device string (cpu/gpu/cuda) and gracefully fall back to CPU if CUDA is unavailable.
+        """
+        if isinstance(model_device, torch.device):
+            resolved_device = model_device
+        else:
+            requested = (model_device or "cpu").strip()
+            normalized = requested.lower()
+            if normalized.startswith("gpu"):
+                requested = f"cuda{requested[3:]}"
+            try:
+                resolved_device = torch.device(requested)
+            except (TypeError, ValueError, RuntimeError):
+                self.logs.write_logs(
+                    f"Invalid device '{model_device}'. Falling back to CPU.",
+                    LOG_LEVEL.WARNING,
+                )
+                resolved_device = torch.device("cpu")
+        if resolved_device.type == "cuda" and not torch.cuda.is_available():
+            self.logs.write_logs(
+                f"CUDA device '{resolved_device}' requested but CUDA is not available. Falling back to CPU.",
+                LOG_LEVEL.WARNING,
+            )
+            return torch.device("cpu")
+        return resolved_device
+
+    def _build_detection_model(self) -> ultralytics.YOLO:
+        detection_model:ultralytics.YOLO = (
+            ultralytics.YOLO(self.model_weights_path, verbose=False)
             .to(self.device, dtype=torch.float32)
         )
         # Explicitly disable mixed-precision to avoid CUDA misaligned address faults.
-        self.detection_model.overrides["half"] = False
-        self.detection_model.model.float()
-        self.__cache_model()
-#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    def __del__(self):
-        if hasattr(self, "detection_model"):
-            del self.detection_model
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
-#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    def __cache_model(self):
+        detection_model.overrides["half"] = False
+        detection_model.model.float()
+        self.__cache_model(detection_model)
+        self._models_registry.append(detection_model)
+        return detection_model
+
+    def _get_thread_model(self) -> ultralytics.YOLO:
+        model = getattr(self._thread_local, "model", None)
+        if model is None:
+            self.logs.write_logs(
+                f"Initializing face detection model for thread '{threading.current_thread().name}'.",
+                LOG_LEVEL.DEBUG,
+            )
+            model = self._build_detection_model()
+            self._thread_local.model = model
+        return model
+
+    def __cache_model(self, model: ultralytics.YOLO):
         """
-        Cache the face detection and recognition models by performing dummy inferences to avoid cold starts during actual use.
+        Cache the face detection model by performing a dummy inference per-thread to avoid cold starts.
         """
-        with self._inference_lock:
-            dummy_input = torch.randn(1, 3, 224, 224, device=self.device, dtype=torch.float32) / 255
-            _ = self.detection_model(dummy_input, verbose=False, conf=self.confidence_threshold)
+        dummy_input = torch.randn(1, 3, 224, 224, device=self.device, dtype=torch.float32) / 255
+        _ = model(dummy_input, verbose=False, conf=self.confidence_threshold)
         self.logs.write_logs("'DetectFaces' Model is Cached !!",LOG_LEVEL.INFO)
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def detect_face(self, image):
@@ -64,8 +117,8 @@ class DetectFaces:
         Returns:
             dict: A dictionary containing the bounding box of the detected face and the cropped face image.
         """
-        with self._inference_lock:
-            output = self.detection_model(image, verbose=False, conf=self.confidence_threshold)
+        detection_model = self._get_thread_model()
+        output = detection_model(image, verbose=False, conf=self.confidence_threshold)
         results = Detections.from_ultralytics(output[0])
         # If a face is detected, crop and return the face region.
         if len(results.data["class_name"]) != 0:

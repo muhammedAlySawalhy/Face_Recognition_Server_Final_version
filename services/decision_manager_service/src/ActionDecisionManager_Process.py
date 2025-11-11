@@ -87,21 +87,6 @@ class ActionDecisionManager_Process(Base_process):
                 cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
         return annotated
 
-    def _cleanup_frame(self, payload: dict) -> None:
-        object_key = payload.get("image_object_key")
-        if not object_key:
-            return
-        try:
-            self.storage_client.delete_object(object_key)
-            self.logs.write_logs(
-                f"Cleaned up processed frame '{object_key}' from storage",
-                LOG_LEVEL.DEBUG,
-            )
-        except Exception as exc:
-            self.logs.write_logs(
-                f"Failed to delete processed frame '{object_key}': {exc}",
-                LOG_LEVEL.WARNING,
-            )
 
     async def _publish_saved_action(
         self,
@@ -163,8 +148,7 @@ class ActionDecisionManager_Process(Base_process):
                 f"Error processing face pipeline results: {exc}\n{track_error}",
                 LOG_LEVEL.ERROR,
             )
-        finally:
-            await asyncio.to_thread(self._cleanup_frame, payload)
+  
 
     async def _process_phone_payload(self, payload: dict):
         try:

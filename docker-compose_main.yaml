@@ -28,10 +28,14 @@ services:
         source: ${DATA_DIR}
         target: /app/Data
     depends_on:
-      - Redis_Server
-      - rmq_Server
-      - Load_Balancer
-      - minio
+      minio:
+        condition: service_healthy
+      Redis_Server:
+        condition: service_started
+      rmq_Server:
+        condition: service_started
+      Load_Balancer:
+        condition: service_started
     ports:
       - "0.0.0.0:${GATEWAY_PORT:-8001}:8001"
     networks:
@@ -92,8 +96,6 @@ services:
     restart: unless-stopped
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
   #-------------------------------------------------------------------------------------------------------------#
-  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
-  #-------------------------------------------------------------------------------------------------------------#
   # Server Manager Service
   server-manager:
     image: fr-server-server_manager_service:latest
@@ -129,7 +131,7 @@ services:
         ipv4_address: ${SERVER_MANAGER_1_IP}
     restart: unless-stopped
   #-------------------------------------------------------------------------------------------------------------#
-  #Redis Server
+  #MinIO Server
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
   minio:
     image: minio/minio:latest
@@ -137,27 +139,63 @@ services:
     command: server /data --console-address ":9001"
     environment:
       - TZ=Africa/Cairo
+      - MINIO_REGION_NAME=${STORAGE_REGION:-us-east-1}
       - MINIO_ROOT_USER=${STORAGE_ACCESS_KEY:-minioadmin}
       - MINIO_ROOT_PASSWORD=${STORAGE_SECRET_KEY:-minioadmin}
     ports:
       - "${MINIO_API_PORT:-9100}:9000" # S3 API
       - "${MINIO_CONSOLE_PORT:-9001}:9001" # Console
-    # ====== MOUNT TO ROOT DISK (bind-mount) ======
-    # This path (/srv/minio) is on the host's root filesystem "/".
-    # Create it once: sudo mkdir -p /srv/minio && sudo chown 1000:1000 /srv/minio
     volumes:
       - /srv/minio:/data
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  # One-shot initializer that sets an hourly retention rule
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 60s
+    networks:
+      storage_network:
+        aliases:
+          - minio
 
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  # MinIO Cleanup Service 
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  minio-cleanup:
+    image: minio/mc:latest
+    container_name: fr_minio_cleanup
+    environment:
+      - STORAGE_FRAMES_BUCKET=${STORAGE_FRAMES_BUCKET:-face-frames}
+      - RETENTION_HOURS=${RETENTION_HOURS:-1}
+      - STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY:-minioadmin}
+      - STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY:-minioadmin}
+      - CLEANUP_INTERVAL_MINUTES=5
+    entrypoint: >
+      sh -c "
+        echo 'Using direct MC approach...';
+        
+        # Wait a bit for network to stabilize
+        sleep 10;
+        
+        # Direct MC setup without complex checks
+        mc alias set myminio http://minio:9000 $${STORAGE_ACCESS_KEY} $${STORAGE_SECRET_KEY};
+        mc mb myminio/$${STORAGE_FRAMES_BUCKET} || true;
+        
+        echo 'Cleanup service started';
+        while true; do
+          echo \"\$(date) - Running cleanup\";
+          mc find myminio/$${STORAGE_FRAMES_BUCKET}/frames/ --older-than $${RETENTION_HOURS}h --exec 'mc rm --force {}' 2>/dev/null || true;
+          sleep $$(( $${CLEANUP_INTERVAL_MINUTES} * 60 ));
+        done
+      "
+    networks:
+      storage_network:
+        aliases:
+          - minio-cleanup
   #-------------------------------------------------------------------------------------------------------------#
+  #Redis Server
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
   Redis_Server:
     image: redis:8.0.2
     container_name: Redis_Server
@@ -176,7 +214,7 @@ services:
           - Redis_Server
   #-------------------------------------------------------------------------------------------------------------#
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
-  #Redis Server
+  #RabbitMQ Server
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
   rmq_Server:
     image: rabbitmq:4-management
@@ -215,7 +253,6 @@ services:
       - "8000:80"
     volumes:
       - ${ROOT_PATH}/config_templates/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
-
     command: /bin/sh -c "envsubst '$$GATEWAY_HOST $$GATEWAY_PORT $$NGINX_PORT' < /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
 
 #**************************************************************************************************************#
@@ -232,36 +269,29 @@ volumes:
 #**************************************************************************************************************#
 networks:
   load_balance_network:
+    external: true
     name: load_balance_network
-    driver: bridge
-    internal: True
   #______________________________________________________________________________________________________________#
   rmq_network:
+    external: true
     name: rmq_network
-    driver: bridge
-    internal: True
   #______________________________________________________________________________________________________________#
   rmq_network_gui:
+    external: true
     name: rmq_network_gui
-    driver: bridge
   #______________________________________________________________________________________________________________#
   gui_network:
+    external: true
     name: fr_gui_network
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 50.50.0.0/16
-          gateway: 50.50.0.1
   #______________________________________________________________________________________________________________#
   redis_network:
+    external: true
     name: redis_network
-    driver: bridge
-    internal: True
   #______________________________________________________________________________________________________________#
   fr_network:
+    external: true
     name: fr_network
-    driver: bridge
   #______________________________________________________________________________________________________________#
   storage_network:
+    external: true
     name: storage_network
-    driver: bridge
