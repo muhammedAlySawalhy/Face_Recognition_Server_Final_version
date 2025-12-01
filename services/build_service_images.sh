@@ -16,11 +16,22 @@ ALL_SERVICES=(
     "gateway_server_service"
     "pipelines_manager_service"
     "pipeline_worker_service"
-    "gui_service"
+    "face_ingest_service"
+    "fr_server_load_balancing"
+    "gui_proxy_service"
+    "mirando_gui"
 )
 
 resolve_service_dir() {
     local service_name="$1"
+    if [[ "$service_name" == "mirando_gui" ]]; then
+        echo "./services/Mirando-GUI"
+        return 0
+    fi
+    if [[ "$service_name" == "face_ingest_service" ]]; then
+        echo "./services/Face_Ingest_Service"
+        return 0
+    fi
     local candidates=("./$service_name" "./services/$service_name")
 
     for dir in "${candidates[@]}"; do
@@ -151,15 +162,25 @@ build_service(){
     fi
     service_build_arg="${service_dir#./}"
     
-    echo "Building service: $service_name"
-    echo "Image name: $image_name"
-    echo "Log file: $log_file"
-    
     # Determine build arguments based on service type
     local build_args=""
     case "$service_name" in
-        "gui_service")
-            build_args="--build-arg NODE_VERSION=\"$NODE_VERSION\" --build-arg SERVICE_NAME=\"$service_build_arg\""
+        "mirando_gui")
+            image_name="fr-mirando-gui:$IMAGE_VERSION"
+            build_args=""
+            ;;
+        "gui_proxy_service")
+            image_name="fr_gui_server_proxy:$IMAGE_VERSION"
+            build_args=""
+            ;;
+        "face_ingest_service")
+            image_name="fr-face-ingestor:$IMAGE_VERSION"
+            build_args=""
+            ;;
+        "fr_server_load_balancing")
+            # Build and tag for the NGINX load balancer
+            image_name="fr_loadbalance:${IMAGE_VERSION#v}"
+            build_args=""
             ;;
         "pipeline_worker_service")
             build_args="--build-arg CUDA_VERSION=\"$CUDA_VERSION\" --build-arg UBUNTU_VERSION=\"$UBUNTU_VERSION\" --build-arg PYTHON_VERSION=\"$PYTHON_VERSION\" --build-arg SERVICE_NAME=\"$service_build_arg\""
@@ -168,6 +189,10 @@ build_service(){
             build_args="--build-arg PYTHON_VERSION=\"$PYTHON_VERSION\" --build-arg DEBIAN_VERSION=\"$DEBIAN_VERSION\" --build-arg SERVICE_NAME=\"$service_build_arg\""
             ;;
     esac
+    
+    echo "Building service: $service_name"
+    echo "Image name: $image_name"
+    echo "Log file: $log_file"
     
     # Build the Docker image
     eval "docker build $build_args -t \"$image_name\" -f \"$service_dir/Dockerfile\" . > \"$log_file\" 2>&1"
@@ -183,8 +208,26 @@ build_service(){
         fi
         
         # Tag as latest
-        docker tag "$image_name" "fr-server-$service_name:latest"
-        echo "   Tagged as 'fr-server-$service_name:latest'"
+        local latest_tag="fr-server-$service_name:latest"
+        case "$service_name" in
+            "mirando_gui")
+                latest_tag="fr-mirando-gui:latest"
+                ;;
+            "gui_proxy_service")
+                latest_tag="fr_gui_server_proxy:latest"
+                ;;
+            "face_ingest_service")
+                latest_tag="fr-face-ingestor:latest"
+                ;;
+            "fr_server_load_balancing")
+                latest_tag="fr_loadbalance:latest"
+                # Also tag the legacy name used in docker-compose
+                docker tag "$image_name" "fr_loadbalance:0"
+                echo "   Tagged as 'fr_loadbalance:0'"
+                ;;
+        esac
+        docker tag "$image_name" "$latest_tag"
+        echo "   Tagged as '$latest_tag'"
         
         echo "   Build log saved to: $log_file"
         return 0

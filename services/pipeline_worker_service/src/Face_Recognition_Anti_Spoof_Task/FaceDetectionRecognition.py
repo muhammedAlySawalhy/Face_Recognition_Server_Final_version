@@ -1,16 +1,14 @@
 #!/usr/bin/env python3.10
 import os
 import threading
-import torch
 import tensorflow as tf
-from common_utilities import crop_image_center,LOGGER,LOG_LEVEL, get_paths
+from common_utilities import LOGGER,LOG_LEVEL, get_paths
 from utilities.files_handler import get_client_image
-import cv2
 import numpy as np
-from .Face_Recognition_Task.DetectFaces import DetectFaces
 from .Face_Recognition_Task.RecognitionFace import RecognitionFace
 from .Face_Anti_Spoof_Task.SpoofChecker import SpoofChecker
 from typing import List, Dict, Optional
+from utilities.detection_service import DetectionServiceClient
 
 class FaceDetectionRecognition:
     def __init__(
@@ -22,6 +20,8 @@ class FaceDetectionRecognition:
         Recognition_Model_device: str = "cpu",
         Spoof_Model_device: str = "cpu",
         Models_Weights_dir: str = "Models_Weights",
+        Detection_service_url: str | None = None,
+        Detection_service_timeout: float = 1.5,
         Recognition_model_name:str="r100",
         Recognition_Threshold=0.25,
         Anti_Spoof_threshold=0.25,
@@ -101,12 +101,6 @@ class FaceDetectionRecognition:
         self.logs.write_logs(f"Using {self.recognition_model_device} for Recognition Model",LOG_LEVEL.DEBUG)
         self.logs.write_logs(f"Using {self.spoof_model_device} for Spoof Model",LOG_LEVEL.DEBUG)
         #------------------------------------------------------------------------------------------------------------------#
-        self.Detect_Faces=DetectFaces(
-            model_weights_path=Detection_model_weights_path,
-            Model_device=self.detection_model_device,
-            confidence=Detection_confidence,
-        )
-        #------------------------------------------------------------------------------------------------------------------#
         self.Recognition_Face=RecognitionFace(model_weights_path=Recognition_model_weights_path,
                                               Model_device=self.recognition_model_device,
                                               model_name=Recognition_model_name,
@@ -119,10 +113,13 @@ class FaceDetectionRecognition:
         self._ref_cache_lock = threading.Lock()
         self._ref_embeddings: Dict[str, np.ndarray] = {}
         self._ref_versions: Dict[str, float] = {}
+        self._detection_client = DetectionServiceClient(
+                                    base_url=Detection_service_url,
+                                    timeout=Detection_service_timeout,
+                                    logger=self.logs,
+                                )
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def __del__(self):
-        if hasattr(self, "Detect_Faces"):
-            del self.Detect_Faces
         if hasattr(self, "Recognition_Face"):
             del self.Recognition_Face
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -200,28 +197,60 @@ class FaceDetectionRecognition:
                 f"{client_name}-Received frame with zero size", LOG_LEVEL.WARNING
             )
             return pipeline_result
-        image = crop_image_center(image, crop_width=960, crop_height=720)
-        if image is None or image.size == 0:
+
+        detection_result = self._detection_client.detect_face(image)
+        if detection_result is None:
             self.logs.write_logs(
-                f"{client_name}-Cropping produced an empty frame", LOG_LEVEL.WARNING
+                f"{client_name}-Detection service did not return a face; skipping recognition",
+                LOG_LEVEL.WARNING,
             )
             return pipeline_result
-        Clients_data["user_image"]=image
-        detection_result = self.Detect_Faces.detect_face(image)
-        # Proceed with face recognition if a face was detected.
-        face_image=detection_result["face_image"]
-        if face_image is not None:
-            pipeline_result["detection_success"] = True
-            pipeline_result.update(detection_result)
-            face_bbox=detection_result["face_bbox"]
-            checking_result = self.__check_client(
-                client_name=client_name,
-                face_image=face_image,
-                face_bbox=face_bbox
-                )
-            pipeline_result.update(checking_result)
+
+        face_bbox = detection_result["face_bbox"]
+        face_image, face_bbox = self._crop_square_face(image, face_bbox, target_size=340)
+        if face_image is None:
+            return pipeline_result
+        pipeline_result["detection_success"] = True
+        pipeline_result.update(
+            {
+                "face_image": face_image,
+                "face_bbox": face_bbox,
+            }
+        )
+        checking_result = self.__check_client(
+            client_name=client_name,
+            face_image=face_image,
+            face_bbox=face_bbox
+            )
+        pipeline_result.update(checking_result)
         return pipeline_result
     #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    def _crop_square_face(self, image: np.ndarray, bbox: List[int], target_size: int = 340):
+        if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+            return None, None
+        h, w, _ = image.shape
+        x0, y0, x1, y1 = bbox
+        cx = int((x0 + x1) / 2)
+        cy = int((y0 + y1) / 2)
+        half = target_size // 2
+        new_x0 = max(0, cx - half)
+        new_y0 = max(0, cy - half)
+        new_x1 = new_x0 + target_size
+        new_y1 = new_y0 + target_size
+        if new_x1 > w:
+            shift = new_x1 - w
+            new_x0 = max(0, new_x0 - shift)
+            new_x1 = w
+        if new_y1 > h:
+            shift = new_y1 - h
+            new_y0 = max(0, new_y0 - shift)
+            new_y1 = h
+        face_crop = image[new_y0:new_y1, new_x0:new_x1]
+        if face_crop.size == 0:
+            return None, None
+        resized = cv2.resize(face_crop, (target_size, target_size))
+        return resized, [new_x0, new_y0, new_x1, new_y1]
+
     def _get_reference_embedding(self, client_name: str) -> Optional[np.ndarray]:
         paths = get_paths()
         image_path = os.path.join(
@@ -259,11 +288,8 @@ class FaceDetectionRecognition:
             )
             return None
 
-        detection_result = self.Detect_Faces.detect_face(ref_image)
-        ref_face = detection_result.get("face_image")
-        if ref_face is None:
-            # Fall back to centered crop if detection fails
-            ref_face = crop_image_center(ref_image, crop_width=320, crop_height=320)
+        # Reference images are assumed to be pre-cropped/aligned faces.
+        ref_face = ref_image
 
         try:
             embedding = self.Recognition_Face.get_embedding(ref_face)

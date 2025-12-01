@@ -298,6 +298,17 @@ if [ "$WORKERS_ONLY" = false ]; then
             exit 1
         fi
         
+        # Ensure Mirando admin GUI is up when main stack is not started
+        if [ "$GUI_ONLY" = true ]; then
+            log_info "${GREEN}🖥️ Starting Mirando admin GUI...${NC}"
+            docker compose -p fr_main -f docker-compose_main.yaml up -d --no-deps mirando-admin
+            
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}❌ Failed to start Mirando admin GUI${NC}"
+                exit 1
+            fi
+        fi
+        
         sleep 5
     fi
 fi
@@ -331,12 +342,14 @@ fi
 MAIN_PORT=$(docker compose -p fr_main port gateway 8000 2>/dev/null | cut -d: -f2 || echo "8000")
 GUI_PORT=$(docker compose -p fr_gui port nginx 443 2>/dev/null | cut -d: -f2 || echo "4000")
 RABBITMQ_PORT=$(docker compose -p fr_main port rmq_Server 15672 2>/dev/null | cut -d: -f2 || echo "15672")
+MIRANDO_PORT=$(docker compose -p fr_main port mirando-admin 3000 2>/dev/null | cut -d: -f2 || echo "${GUI_ORIGIN_PORT:-3000}")
 
 echo ""
 echo -e "${GREEN}✅ Services started successfully!${NC}"
 echo ""
 echo -e "${BOLD}🌐 Access points:${NC}"
 echo -e "   - Main Server: ${CYAN}http://localhost:${MAIN_PORT}${NC}"
+echo -e "   - Mirando Admin GUI: ${CYAN}http://localhost:${MIRANDO_PORT}${NC}"
 echo -e "   - GUI: ${CYAN}https://localhost:${GUI_PORT}${NC}"
 echo -e "   - RabbitMQ Management: ${CYAN}http://localhost:${RABBITMQ_PORT}${NC} ${YELLOW}(admin/admin123)${NC}"
 echo ""

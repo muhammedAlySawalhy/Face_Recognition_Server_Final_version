@@ -13,7 +13,6 @@ from common_utilities import (
     set_namespace,
     set_paths,
 )
-from common_utilities.log_maintenance import start_log_cleanup_worker_from_paths
 from utilities import create_Models_Weights_Directory
 from deepface.commons.folder_utils import (
     initialize_folder as deepface_initialize_folder,
@@ -58,6 +57,8 @@ def get_models_parameters(models_weights_root_path):
         "Face_Detection_Model_device": "cuda:0",
         "Face_Recognition_Model_device": "GPU:0",
         "spoof_Models_device": "cuda:0",
+        "Detection_service_url": os.getenv("FACE_DETECTION_SERVICE_URL", "http://face-ingestor:8010"),
+        "Detection_service_timeout": float(os.getenv("FACE_DETECTION_SERVICE_TIMEOUT", 1.5)),
         "Recognition_model_name": "VGG-Face",
         "Recognition_Metric": "cosine_similarity",
         "Object_class_number": 67,
@@ -123,10 +124,7 @@ def full_system_initialization(service_file_path, service_name):
         f"Storage provider '{storage_client.provider}' bucket '{storage_client.frames_bucket}'",
         LOG_LEVEL.INFO,
     )
-    start_log_cleanup_worker_from_paths(
-        paths,
-        namespace=get_namespace(),
-    )
+
 
     return paths, models_parameters, service_logger, config_manager, storage_client
 

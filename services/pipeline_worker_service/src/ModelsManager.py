@@ -23,6 +23,8 @@ class ModelsManager:
                 Face_Detection_Model_device:str="GPU:0",
                 Face_Recognition_Model_device:str="GPU:0",
                 spoof_Models_device:str="cuda:0",
+                Detection_service_url:str=None,
+                Detection_service_timeout:float=1.5,
                 #models_parameters
                 Recognition_model_name:str="r100",
                 Recognition_Threshold=0.25,
@@ -71,6 +73,8 @@ class ModelsManager:
                                 Detection_Model_device=Face_Detection_Model_device,
                                 Recognition_Model_device=Face_Recognition_Model_device,
                                 Spoof_Model_device=spoof_Models_device,
+                                Detection_service_url=Detection_service_url,
+                                Detection_service_timeout=Detection_service_timeout,
                                 #models_parameters
                                 Recognition_model_name=Recognition_model_name,
                                 Recognition_Threshold=Recognition_Threshold,
@@ -110,4 +114,3 @@ class ModelsManager:
     def IS_INITIALIZE(self):
         return self.__IS_INITIALIZE
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-

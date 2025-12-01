@@ -32,7 +32,7 @@ class SpoofChecker:
         if hasattr(self, "antispoof_model"):
             del self.antispoof_model
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    def check_spoof_face(self, face_image: np.ndarray, face_bbox: list) -> bool:
+    def check_spoof_face(self, face_image: np.ndarray, face_bbox: list | None) -> bool:
         """
         Perform anti-spoofing detection on the face image using DeepFace.
         Args:
@@ -40,6 +40,10 @@ class SpoofChecker:
         Returns:
             bool: True if the face is spoofed, False otherwise.
         """
+        if not isinstance(face_bbox, (list, tuple)) or len(face_bbox) < 4:
+            # Default to the full image if no bbox is provided
+            h, w = face_image.shape[:2]
+            face_bbox = [0, 0, w, h]
         is_real, antispoof_score = self.antispoof_model.analyze(
             img=face_image,
             facial_area=(

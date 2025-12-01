@@ -7,6 +7,7 @@ import ultralytics.engine
 import ultralytics.engine.results
 
 from common_utilities import LOGGER, LOG_LEVEL
+from utilities.detection_service import DetectionServiceClient
 class ObjectDetection:
     def __init__(
         self,
@@ -34,6 +35,7 @@ class ObjectDetection:
         # Each worker thread gets its own YOLO instance so concurrent calls never share state.
         self._thread_local = threading.local()
         self._models_registry = []
+        self._detection_client = DetectionServiceClient(logger=self.logs)
 
         base_model = self._build_detection_model()
         self._thread_local.model = base_model
@@ -110,9 +112,9 @@ class ObjectDetection:
         self.logs.write_logs("'ObjectDetection' Model is Cached !!",LOG_LEVEL.INFO)
 
     def detect_object(self, image):
+        phone_data = {"phone_bbox": None, "phone_confidence": None}
         detection_model = self._get_thread_model()
         results: List[ultralytics.engine.results.Results] = detection_model(image, verbose=False)
-        phone_data = {"phone_bbox": None, "phone_confidence": None}
         for cls_result in results[0]:
             cls_boxes = cls_result.boxes
             cls = cls_boxes.cls.item()
@@ -120,4 +122,11 @@ class ObjectDetection:
             x1, y1, x2, y2 = map(int, cls_boxes.xyxy[0])
             if (cls == self.class_number and confidence >= self.confidence_threshold):
                 phone_data.update({"phone_bbox": [x1, y1, x2, y2], "phone_confidence": confidence})
+        if phone_data["phone_bbox"] is not None:
+            return phone_data
+
+        # Fallback to external detection service only if YOLO finds nothing
+        service_result = self._detection_client.detect_phone(image)
+        if service_result:
+            phone_data.update(service_result)
         return phone_data

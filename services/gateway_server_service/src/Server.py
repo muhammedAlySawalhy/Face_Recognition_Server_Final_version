@@ -123,26 +123,11 @@ class Server(Base_process):
         self.clients_join_time: Dict[str, str] = {}
         self.client_checks: ClientChecks = ClientChecks(self.logs)
 
+       
         self.status_store: RedisHandler | None = redis_clients_status or RedisHandler(db=0)
         self._prime_status_store()
 
-        limiter_cfg = rate_limiter_config or {
-            "max_clients": self.config_manager.rate_limiter.max_clients,
-            "window_size_in_millis": self.config_manager.rate_limiter.window_ms,
-            "cleanup_interval_in_millis": self.config_manager.rate_limiter.cleanup_ms,
-        }
-        self._rate_limiter_manager: RateLimiterManager | None = None
-        try:
-            self._rate_limiter_manager = RateLimiterManager.get_instance(RateLimiter, limiter_cfg)
-            self.logs.write_logs(
-                "Rate limiter initialised -> max %s clients every %s ms"
-                % (limiter_cfg["max_clients"], limiter_cfg["window_size_in_millis"]),
-                LOG_LEVEL.INFO,
-            )
-        except Exception as rate_limiter_error:
-            self.logs.write_logs(
-                f"Failed to initialise rate limiter: {rate_limiter_error}", LOG_LEVEL.ERROR
-            )
+     
 
         self.__rmq_handler = self._create_rmq_handler()
 
@@ -298,40 +283,10 @@ class Server(Base_process):
         self._update_active_clients_status()
         self.logs.write_logs(f"Cleaned up connection for {client_name}", LOG_LEVEL.DEBUG)
 
-    def _rate_limiter_key(self, websocket: websockets.asyncio.server.ServerConnection) -> str:
-        try:
-            remote = websocket.remote_address
-        except Exception:
-            remote = None
-
-        if isinstance(remote, tuple) and remote:
-            host, port = remote[0], remote[1] if len(remote) > 1 else 0
-            return f"{host}:{port}"
-        if isinstance(remote, str):
-            return remote
-
-        return f"unknown:{id(websocket)}"
-
     async def handle_connection(self, websocket: websockets.asyncio.server.ServerConnection):
         client_name = ""
-        limiter_key = self._rate_limiter_key(websocket)
-        should_cleanup = False
-        if self._rate_limiter_manager and not self._rate_limiter_manager.allow_request(limiter_key):
-            await websocket.send(
-                json.dumps(
-                    {
-                        "action": Action.ACTION_ERROR.value,
-                        "reason": Reason.EMPTY_REASON.value,
-                    }
-                )
-            )
-            await websocket.close(4003)
-            should_cleanup = True
-            self.logs.write_logs(
-                f"Rate limit exceeded for connection {limiter_key}", LOG_LEVEL.WARNING
-            )
-          
-            return
+        
+     
         try:
             while not self.stop_process:
                 try:
