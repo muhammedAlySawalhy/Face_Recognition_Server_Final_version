@@ -229,7 +229,8 @@ class Server(Base_process):
                             f"Client {client_name} not connected or invalid message, state {self.ws.keys()}",
                             LOG_LEVEL.WARNING,
                         )
-                        raise RequeueMessage(f"Client {client_name} not connected; requeueing action")
+                        # raise RequeueMessage(f"Client {client_name} not connected; requeueing action")
+                        return
             except ConnectionClosed:
                 self.logs.write_logs(
                     f"Connection closed while sending to {client_name}", LOG_LEVEL.WARNING

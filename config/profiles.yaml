@@ -16,10 +16,6 @@ profiles:
       pipelines_per_gpu: 1
       total_pipelines: 1
       max_clients_per_pipeline: 4
-    rate_limiter:
-      max_clients: 4
-      window_ms: 12000
-      cleanup_ms: 12000
     storage:
       provider: minio
       frames_bucket: face-frames

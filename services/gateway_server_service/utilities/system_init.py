@@ -11,7 +11,7 @@ from common_utilities import (
     set_namespace,
     set_paths,
 )
-from common_utilities.log_maintenance import start_log_cleanup_worker_from_paths
+
 
 
 def initialize_system_paths(service_file_path):
@@ -58,10 +58,7 @@ def full_system_initialization(service_file_path, service_name):
         f"Storage provider set to '{storage_client.provider}' bucket '{storage_client.frames_bucket}'",
         LOG_LEVEL.INFO,
     )
-    start_log_cleanup_worker_from_paths(
-        paths,
-        namespace=get_namespace(),
-    )
+   
 
     return paths, service_logger, config_manager, storage_client
 

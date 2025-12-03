@@ -22,8 +22,9 @@ class StorageWriter(StorageWriterInterface):
                 image_bytes = aligned_value
 
             if not image_bytes:
-                print("No aligned image bytes found in client_data")
-                return False
+                raise ValueError(
+                    f"No aligned image bytes found in client_data (keys: {list(client_data.keys())})"
+                )
 
             filename = os.path.join(destination, f"{client_name}_1.jpg")
             with open(filename, "wb") as img_file:
@@ -31,5 +32,5 @@ class StorageWriter(StorageWriterInterface):
 
             return True
         except Exception as e:
-            print(f"Error writing data: {e}")
-            return False
+            # Surface detailed errors to callers instead of silently returning False.
+            raise

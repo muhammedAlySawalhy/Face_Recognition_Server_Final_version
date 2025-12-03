@@ -11,7 +11,7 @@ from common_utilities import (
     ConfigManager,
     build_storage_client,
 )
-from common_utilities.log_maintenance import start_log_cleanup_worker_from_paths
+
 from .files_handler import create_server_Data_Directory, create_Users_Actions_Directory
 from dotenv import load_dotenv
 
@@ -65,10 +65,7 @@ def full_system_initialization(service_file_path, service_name):
         f"Storage provider set to '{storage_client.provider}' bucket '{storage_client.frames_bucket}'",
         LOG_LEVEL.INFO,
     )
-    start_log_cleanup_worker_from_paths(
-        paths,
-        namespace=get_namespace(),
-    )
+  
 
     return paths, service_logger, storage_client
 

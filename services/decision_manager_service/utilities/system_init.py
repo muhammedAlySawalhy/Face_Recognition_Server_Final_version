@@ -11,7 +11,6 @@ def _add_to_python_path():
 _add_to_python_path()
 
 from common_utilities import  get_root_path, LOGGER, set_paths, set_namespace, get_namespace, LOG_LEVEL, ConfigManager, build_storage_client
-from common_utilities.log_maintenance import start_log_cleanup_worker_from_paths
 
 def initialize_system_paths():
     root_path=get_root_path(start=__file__,APP_HEAD="decision_manager.py")
@@ -47,11 +46,6 @@ def full_system_initialization(service_name):
         f"Storage provider set to '{storage_client.provider}' bucket '{storage_client.frames_bucket}'",
         LOG_LEVEL.INFO,
     )
-    start_log_cleanup_worker_from_paths(
-        paths,
-        namespace=get_namespace(),
-        max_age_hours=1,
-        sweep_interval_seconds=300,
-    )
+ 
 
     return paths, service_logger, storage_client

@@ -2,6 +2,7 @@
 import os
 import threading
 import tensorflow as tf
+import cv2
 from common_utilities import LOGGER,LOG_LEVEL, get_paths
 from utilities.files_handler import get_client_image
 import numpy as np
@@ -9,6 +10,7 @@ from .Face_Recognition_Task.RecognitionFace import RecognitionFace
 from .Face_Anti_Spoof_Task.SpoofChecker import SpoofChecker
 from typing import List, Dict, Optional
 from utilities.detection_service import DetectionServiceClient
+from .Face_Recognition_Task.DetectFaces import DetectFaces
 
 class FaceDetectionRecognition:
     def __init__(
@@ -113,11 +115,20 @@ class FaceDetectionRecognition:
         self._ref_cache_lock = threading.Lock()
         self._ref_embeddings: Dict[str, np.ndarray] = {}
         self._ref_versions: Dict[str, float] = {}
+        # Local YOLO face detector (no HTTP dependency)
+        # Local YOLO face detector (no HTTP dependency)
+        detection_weights = Detection_model_weights_path if "Detection_model_weights_path" in locals() else None
+        self._detect_faces = DetectFaces(
+            model_weights_path=detection_weights or Detection_model_weights_path,
+            Model_device=self.detection_model_device,
+            confidence=0.15,
+            logger=self.logs,
+        )
         self._detection_client = DetectionServiceClient(
-                                    base_url=Detection_service_url,
-                                    timeout=Detection_service_timeout,
-                                    logger=self.logs,
-                                )
+            base_url=None,
+            timeout=Detection_service_timeout,
+            logger=self.logs,
+        )
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     def __del__(self):
         if hasattr(self, "Recognition_Face"):
@@ -198,19 +209,25 @@ class FaceDetectionRecognition:
             )
             return pipeline_result
 
-        detection_result = self._detection_client.detect_face(image)
+        detection_result = self._detect_faces.detect_face_bbox(image)
+        fallback_used = False
         if detection_result is None:
             self.logs.write_logs(
-                f"{client_name}-Detection service did not return a face; skipping recognition",
+                f"{client_name}-Local detection did not return a face; falling back to center crop",
                 LOG_LEVEL.WARNING,
             )
-            return pipeline_result
+            face_image, face_bbox = self._fallback_center_crop(image, target_size=340)
+            fallback_used = True if face_image is not None else False
+        else:
+            face_bbox = detection_result.get("face_bbox") or detection_result.get("bbox")
+            face_image, face_bbox = self._crop_square_face(image, face_bbox, target_size=340)
 
-        face_bbox = detection_result["face_bbox"]
-        face_image, face_bbox = self._crop_square_face(image, face_bbox, target_size=340)
         if face_image is None:
             return pipeline_result
+
         pipeline_result["detection_success"] = True
+        if fallback_used:
+            pipeline_result["fallback_crop"] = True
         pipeline_result.update(
             {
                 "face_image": face_image,
@@ -250,6 +267,31 @@ class FaceDetectionRecognition:
             return None, None
         resized = cv2.resize(face_crop, (target_size, target_size))
         return resized, [new_x0, new_y0, new_x1, new_y1]
+
+    def _fallback_center_crop(self, image: np.ndarray, target_size: int = 340):
+        """
+        When detection fails on full-body frames, take a centered crop near the top of the frame.
+        This avoids dropping the payload completely while still producing a face-sized patch.
+        """
+        h, w, _ = image.shape
+        half = target_size // 2
+        cx = w // 2
+        # Bias toward the upper third of the frame where faces usually appear.
+        cy = max(half, int(h * 0.25))
+        x0 = max(0, cx - half)
+        y0 = max(0, cy - half)
+        x1 = min(w, x0 + target_size)
+        y1 = min(h, y0 + target_size)
+        # Re-adjust if we hit borders
+        if x1 - x0 < target_size:
+            x0 = max(0, x1 - target_size)
+        if y1 - y0 < target_size:
+            y0 = max(0, y1 - target_size)
+        crop = image[y0:y1, x0:x1]
+        if crop.size == 0:
+            return None, None
+        resized = cv2.resize(crop, (target_size, target_size))
+        return resized, [x0, y0, x1, y1]
 
     def _get_reference_embedding(self, client_name: str) -> Optional[np.ndarray]:
         paths = get_paths()

@@ -8,12 +8,13 @@ events {
 }
 
 http {
-    map $binary_remote_addr $rate_limit_key {
-        default $binary_remote_addr;
-    }
+    # Per-client-IP limits (new connection rate and concurrent connections).
+    limit_req_zone ${NGINX_DOLLAR}binary_remote_addr zone=gateway_rate_limit:${NGINX_RATE_LIMIT_ZONE} rate=${NGINX_RATE_LIMIT_RPS}r/s;
+    limit_conn_zone ${NGINX_DOLLAR}binary_remote_addr zone=gateway_conn_limit:${NGINX_RATE_LIMIT_ZONE};
 
-    limit_req_zone $rate_limit_key zone=gateway_rate_limit:${NGINX_RATE_LIMIT_ZONE} rate=${NGINX_RATE_LIMIT_RPS};
-    limit_conn_zone $binary_remote_addr zone=gateway_conn_limit:${NGINX_RATE_LIMIT_ZONE};
+    # Global limits across all clients combined.
+    limit_req_zone ${NGINX_DOLLAR}server_name zone=gateway_rate_limit_global:${NGINX_RATE_LIMIT_ZONE_GLOBAL} rate=${NGINX_RATE_LIMIT_RPS_GLOBAL}r/s;
+    limit_conn_zone ${NGINX_DOLLAR}server_name zone=gateway_conn_limit_global:${NGINX_RATE_LIMIT_ZONE_GLOBAL};
 
     upstream websocket_backend {
         least_conn;
@@ -24,15 +25,20 @@ http {
         listen ${NGINX_PORT};
 
         location / {
+            # Apply per-IP and global concurrency limits.
             limit_conn gateway_conn_limit ${NGINX_RATE_LIMIT_CONN};
-            limit_req zone=gateway_rate_limit burst=${NGINX_RATE_LIMIT_BURST} nodelay;
+            limit_conn gateway_conn_limit_global ${NGINX_RATE_LIMIT_CONN_GLOBAL};
 
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            # Apply per-IP and global rate limits on new connection handshakes (fixed window with burst).
+            limit_req zone=gateway_rate_limit burst=${NGINX_RATE_LIMIT_BURST} nodelay;
+            limit_req zone=gateway_rate_limit_global burst=${NGINX_RATE_LIMIT_BURST_GLOBAL} nodelay;
+
+            proxy_set_header Host ${NGINX_DOLLAR}host;
+            proxy_set_header X-Real-IP ${NGINX_DOLLAR}remote_addr;
+            proxy_set_header X-Forwarded-For ${NGINX_DOLLAR}proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto ${NGINX_DOLLAR}scheme;
             proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Upgrade ${NGINX_DOLLAR}http_upgrade;
             proxy_set_header Connection "upgrade";
 
             proxy_read_timeout 3600s;

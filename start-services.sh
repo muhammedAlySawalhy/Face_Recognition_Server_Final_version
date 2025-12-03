@@ -235,6 +235,64 @@ check_service() {
     return 1
 }
 
+# Ensure external docker networks exist (compose expects them to be pre-created)
+ensure_network() {
+    local net_name=$1
+    local subnet=$2
+    if docker network inspect "$net_name" >/dev/null 2>&1; then
+        # Verify subnet if one is required (needed for static IPs).
+        if [ -n "$subnet" ]; then
+            current_subnet=$(docker network inspect "$net_name" -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null)
+            if [ "$current_subnet" != "$subnet" ]; then
+                log_info "${YELLOW}🌐 Recreating $net_name with subnet $subnet (was ${current_subnet:-unset})${NC}"
+                docker network rm "$net_name" >/dev/null 2>&1 || true
+                if ! docker network create --subnet "$subnet" "$net_name" >/dev/null 2>&1; then
+                    echo -e "${RED}❌ Failed to recreate network $net_name with subnet $subnet${NC}"
+                    exit 1
+                fi
+            else
+                log_info "${BLUE}🌐 Network exists with matching subnet: $net_name ($subnet)${NC}"
+            fi
+        else
+            log_info "${BLUE}🌐 Network exists: $net_name${NC}"
+        fi
+        return
+    fi
+
+    log_info "${YELLOW}🌐 Creating docker network: $net_name${NC}"
+    local cmd="docker network create"
+    if [ -n "$subnet" ]; then
+        cmd="$cmd --subnet $subnet"
+    fi
+    cmd="$cmd $net_name"
+    if ! eval "$cmd" >/dev/null 2>&1; then
+        echo -e "${RED}❌ Failed to create network $net_name${NC}"
+        exit 1
+    fi
+}
+
+# Create required networks before starting compose stacks
+REQUIRED_NETWORKS=(
+    "load_balance_network"
+    "rmq_network"
+    "rmq_network_gui"
+    "fr_gui_network"
+    "redis_network"
+    "fr_network"
+    "storage_network"
+)
+
+# Default subnet for fr_gui_network if none provided (needed for static IPs)
+: "${FR_GUI_NETWORK_SUBNET:=172.22.0.0/16}"
+
+for net in "${REQUIRED_NETWORKS[@]}"; do
+    if [ "$net" = "fr_gui_network" ]; then
+        ensure_network "$net" "$FR_GUI_NETWORK_SUBNET"
+    else
+        ensure_network "$net"
+    fi
+done
+
 # Create required directories if not skipped
 if [ "$SKIP_DIR_CHECK" = false ]; then
     log_info "${BLUE}📁 Checking and creating required directories...${NC}"

@@ -9,7 +9,7 @@ from common_utilities import (
     set_paths,
     get_namespace,
 )
-from common_utilities.log_maintenance import start_log_cleanup_worker_from_paths
+
 
 try:
     from common_utilities import ConfigManager  # type: ignore
@@ -51,10 +51,7 @@ def full_system_initialization(service_file_path, service_name):
     service_logger.write_logs(
         f"Application root path: {paths['APPLICATION_ROOT_PATH']}", LOG_LEVEL.DEBUG
     )
-    start_log_cleanup_worker_from_paths(
-        paths,
-        namespace=get_namespace(),
-    )
+
 
     config_manager = None
     if ConfigManager is not None:

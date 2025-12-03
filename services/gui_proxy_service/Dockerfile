@@ -3,10 +3,10 @@ FROM nginx:alpine
 # envsubst (from gettext) for template rendering, openssl for CSR/key ops, CA bundle for trust
 RUN apk add --no-cache gettext openssl ca-certificates && update-ca-certificates
 
-# Copy template & entrypoint
+# Copy template & the proxy entrypoint (sh-compatible)
 # Provide a default template (overridden at runtime by mounted template)
 COPY config_templates/site.conf.template /etc/nginx/templates/site.conf.template
-COPY entrypoint.sh /entrypoint.sh
+COPY services/gui_proxy_service/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # (Optional) If you also keep a custom nginx.conf, copy it:

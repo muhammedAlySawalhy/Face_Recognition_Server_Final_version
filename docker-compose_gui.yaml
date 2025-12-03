@@ -1,38 +1,50 @@
 services:
   #-------------------------------------------------------------------------------------------------------------#
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
-  # Fr GUI 
-  fr_GUI:
-    image: fr-server-gui_service:latest
-    container_name: fr_GUI
+  # Mirando Admin GUI (Next.js)
+  mirando-admin:
+    build:
+      context: ./services/Mirando-GUI
+      dockerfile: Dockerfile
+    image: fr-mirando-gui:latest
+    container_name: mirando_admin_gui
     environment:
       - NODE_ENV=production
       - NEXT_TELEMETRY_DISABLED=1
-      - S1_GET_URL=${S1_GET_URL}
-      - S2_GET_URL=${S2_GET_URL}
-      - S1_UPDATE_URL=${S1_UPDATE_URL}
-      - S2_UPDATE_URL=${S2_UPDATE_URL}
-      - GUI_DATA=${GUI_DATA}
-      - USERDATABASE=${USERDATABASE}
-      - Actions=${Actions}
-      - EXCEL_PATH=${EXCEL_PATH}
-      - GUI_ORIGIN_IP=${GUI_ORIGIN_IP}
-      - GUI_ORIGIN_PORT=${GUI_ORIGIN_PORT}
-      - HOST=192.168.10.3
-      - PORT=3000
-    networks:
-      fr_gui_network:
-        ipv4_address: ${GUI_ORIGIN_IP}
+      - HOST=0.0.0.0
+      - PORT=${GUI_ORIGIN_PORT:-3000}
+      - JWT_SECRET=${JWT_SECRET:-change-me}
+      - USERDATABASE=${USERDATABASE:-/app/Data/Users_DataBase}
+      - Actions=/app/Data/Actions
+      - Actions1=${Actions:-/app/Data/Actions}
+      - Actions2=${Actions:-/app/Data/Actions}
+      - FACE_INGESTOR_URL=http://face-ingestor:${INGESTOR_PORT:-8010}
+      - NEXT_PUBLIC_EXCEL_PATH=${EXCEL_PATH:-/app/Data/gui_data/actions.xlsx}
+      - S1_GET=${S1_GET_URL}
+      - S2_GET=${S2_GET_URL}
+      - S1_UPDATE=${S1_UPDATE_URL}
+      - S2_UPDATE=${S2_UPDATE_URL}
+      - GUI_DATA=${GUI_DATA:-/app/Data/gui_data}
+      - EXCEL_PATH=${EXCEL_PATH:-/app/Data/gui_data/users.xlsx}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET=${MINIO_BUCKET:-face-frames}
+      - MINIO_REGION=${MINIO_REGION:-us-east-1}
     volumes:
       - type: bind
         source: ${DATA_DIR}/Users_DataBase
         target: ${USERDATABASE}
       - type: bind
         source: ${DATA_DIR}/Actions
-        target: ${Actions}
+        target: /app/Data/Actions
       - type: bind
-        source: ${DATA_DIR}/gui_data
+        source: ${GUI_DATA_HOST:-${DATA_DIR}/gui_data}
         target: ${GUI_DATA}
+    ports:
+      - "0.0.0.0:${GUI_ORIGIN_PORT:-3000}:3000"
+    networks:
+      - fr_gui_network
     restart: unless-stopped
   #-------------------------------------------------------------------------------------------------------------#
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
@@ -45,8 +57,8 @@ services:
     environment:
       LISTEN_PORT: ${PROXY_LISTEN_PORT}
       SERVER_NAME: ${PROXY_SERVER_NAME}
-      APP_HOST: ${PROXY_APP_HOST}
-      APP_PORT: ${PROXY_APP_PORT}
+      APP_HOST: ${PROXY_APP_HOST:-mirando_admin_gui}
+      APP_PORT: ${PROXY_APP_PORT:-3000}
       # Nginx configuration parameters
       CLIENT_MAX_BODY_SIZE: "${PROXY_CLIENT_MAX_BODY_SIZE:-100M}"
       PROXY_READ_TIMEOUT: "${PROXY_READ_TIMEOUT:-300s}"
@@ -57,10 +69,11 @@ services:
       SAN_DNS: ${PROXY_SAN_DNS}
       SAN_IP: ${PROXY_SAN_IP}
     depends_on:
-      - fr_GUI
+      - mirando-admin
     volumes:
       - ${ROOT_PATH}/certs:/etc/nginx/certs # CSR out / fullchain back in (ro after signing)
-      - ${ROOT_PATH}/config_templates/site.conf.template:/etc/nginx/templates/site.conf.template:ro
+      # Mount entire templates directory so the path always exists as a directory in the container
+      - ${ROOT_PATH}/config_templates:/etc/nginx/templates:ro
     ports:
       - "443:443"
     restart: unless-stopped

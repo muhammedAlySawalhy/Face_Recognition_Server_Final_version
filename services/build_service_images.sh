@@ -154,6 +154,7 @@ build_service(){
     local image_name="fr-server-$service_name:$IMAGE_VERSION"
     local service_dir
     local service_build_arg
+    local build_context="."
 
     service_dir=$(resolve_service_dir "$service_name")
     if [[ -z "$service_dir" ]]; then
@@ -161,6 +162,11 @@ build_service(){
         return 1
     fi
     service_build_arg="${service_dir#./}"
+
+    # For the Mirando GUI we build with its directory as the context so COPY finds package.json/entrypoint
+    if [[ "$service_name" == "mirando_gui" ]]; then
+        build_context="$service_dir"
+    fi
     
     # Determine build arguments based on service type
     local build_args=""
@@ -195,7 +201,7 @@ build_service(){
     echo "Log file: $log_file"
     
     # Build the Docker image
-    eval "docker build $build_args -t \"$image_name\" -f \"$service_dir/Dockerfile\" . > \"$log_file\" 2>&1"
+    eval "docker build $build_args -t \"$image_name\" -f \"$service_dir/Dockerfile\" \"$build_context\" > \"$log_file\" 2>&1"
     local build_result=$?
     
     if [ $build_result -eq 0 ]; then

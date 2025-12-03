@@ -121,15 +121,22 @@ class DetectFaces:
         output = detection_model(image, verbose=False, conf=self.confidence_threshold)
         results = Detections.from_ultralytics(output[0])
         # If a face is detected, crop and return the face region.
-        if len(results.data["class_name"]) != 0:
-            bbox:np.ndarray=None
+        if results.xyxy is not None and len(results.xyxy) > 0:
             for bbox in results.xyxy:
                 x1, y1, x2, y2 = map(int, bbox.tolist())
-                cropped_img = crop_image_bbox(image, [x1, y1, x2, y2], 240)
+                cropped_img = crop_image_bbox(image, [x1, y1, x2, y2], 340)
                 return {
                     "face_bbox": [x1, y1, x2, y2],
                     "face_image": cropped_img,
                 }
         # If no face is detected, return None values.
         return {"face_bbox": None, "face_image": None}
+
+    def detect_face_bbox(self, image):
+        """Convenience helper to return only bbox for downstream cropping."""
+        result = self.detect_face(image)
+        bbox = result.get("face_bbox") if isinstance(result, dict) else None
+        if bbox is None:
+            return None
+        return {"face_bbox": bbox}
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
