@@ -78,25 +78,52 @@ def full_system_initialization(service_file_path, service_name):
 
 
 def get_environment_config():
+    def _override_int(key: str, default: int) -> int:
+        raw_value = os.getenv(key)
+        if raw_value is None or raw_value == "":
+            return default
+        try:
+            return int(raw_value)
+        except ValueError:
+            return default
+
+    def _override_bool(key: str, default: bool) -> bool:
+        raw_value = os.getenv(key)
+        if raw_value is None:
+            return default
+        return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
     if ConfigManager is not None:
         config_manager = ConfigManager.instance()
         pipeline_cfg = config_manager.pipeline
         service_settings = config_manager.service_settings("pipelines_manager")
 
+        pipelines_per_server = _override_int(
+            "PIPELINES_PER_SERVER", pipeline_cfg.pipelines_per_server
+        )
+        total_pipelines = _override_int(
+            "PIPELINES_TOTAL", pipeline_cfg.total_pipelines
+        )
+        max_clients = _override_int(
+            "MAX_CLIENTS_PER_PIPELINE", pipeline_cfg.max_clients_per_pipeline
+        )
+        monitor_gpu = _override_bool(
+            "MONITOR_GPU_UTILISATION",
+            bool(service_settings.get("monitor_gpu_utilisation", False)),
+        )
+
         return {
-            "MaxClientPerPipeline": pipeline_cfg.max_clients_per_pipeline,
-            "MaxPipeline": pipeline_cfg.pipelines_per_server,
-            "PIPELINES_TOTAL": pipeline_cfg.total_pipelines,
-            "MONITOR_GPU_UTILISATION": bool(
-                service_settings.get("monitor_gpu_utilisation", False)
-            ),
+            "MaxClientPerPipeline": max_clients,
+            "MaxPipeline": pipelines_per_server,
+            "PIPELINES_TOTAL": total_pipelines,
+            "MONITOR_GPU_UTILISATION": monitor_gpu,
             "CONFIG_PROFILE": config_manager.profile_name,
         }
 
     max_clients = int(os.getenv("PIPELINE_MAX_CLIENTS", os.getenv("MAX_CLIENTS_PER_PIPELINE", 10)))
     pipelines_per_server = int(os.getenv("PIPELINES_PER_SERVER", os.getenv("MAX_PIPELINE", 4)))
     total_pipelines = int(os.getenv("PIPELINES_TOTAL", pipelines_per_server))
-    monitor_gpu = os.getenv("MONITOR_GPU_UTILISATION", "false").lower() in {"1", "true", "yes", "on"}
+    monitor_gpu = _override_bool("MONITOR_GPU_UTILISATION", False)
     profile = os.getenv("CONFIG_PROFILE", "prod-1gpu-24gb")
 
     return {

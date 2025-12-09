@@ -348,26 +348,21 @@ if [ "$WORKERS_ONLY" = false ]; then
     
     # Start GUI services
     if [ "$MAIN_ONLY" = false ]; then
-        log_info "${GREEN}🖥️ Starting GUI services...${NC}"
-        docker compose -p fr_gui -f docker-compose_gui.yaml up -d
-        
-        if [ $? -ne 0 ]; then
-            echo -e "${RED}❌ Failed to start GUI services${NC}"
-            exit 1
-        fi
-        
-        # Ensure Mirando admin GUI is up when main stack is not started
-        if [ "$GUI_ONLY" = true ]; then
-            log_info "${GREEN}🖥️ Starting Mirando admin GUI...${NC}"
-            docker compose -p fr_main -f docker-compose_main.yaml up -d --no-deps mirando-admin
-            
-            if [ $? -ne 0 ]; then
-                echo -e "${RED}❌ Failed to start Mirando admin GUI${NC}"
-                exit 1
-            fi
-        fi
-        
-        sleep 5
+        log_info "${YELLOW}🖥️ GUI services start is temporarily disabled.${NC}"
+        # docker compose -p fr_gui -f docker-compose_gui.yaml up -d
+        # 
+        # # Ensure Mirando admin GUI is up when main stack is not started
+        # if [ "$GUI_ONLY" = true ]; then
+        #     log_info "${GREEN}🖥️ Starting Mirando admin GUI...${NC}"
+        #     docker compose -p fr_main -f docker-compose_main.yaml up -d --no-deps mirando-admin
+        #     
+        #     if [ $? -ne 0 ]; then
+        #         echo -e "${RED}❌ Failed to start Mirando admin GUI${NC}"
+        #         exit 1
+        #     fi
+        # fi
+        # 
+        # sleep 5
     fi
 fi
 

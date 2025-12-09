@@ -39,15 +39,15 @@ profiles:
       total_gpus: 1
       gpu_memory_gb: 24
     capacity:
-      designed_clients: 140
+      designed_clients: 300
       hard_limit_clients: 160
     pipeline:
-      pipelines_per_server: 6
-      pipelines_per_gpu: 6
-      total_pipelines: 6
+      pipelines_per_server: 12
+      pipelines_per_gpu: 12
+      total_pipelines: 12
       max_clients_per_pipeline: 20
     rate_limiter:
-      max_clients: 160
+      max_clients: 320
       window_ms: 5000
       cleanup_ms: 5000
     storage:
@@ -106,17 +106,17 @@ profiles:
       total_gpus: 2
       gpu_memory_gb: 48
     capacity:
-      designed_clients: 300
-      hard_limit_clients: 320
+      designed_clients: 600
+      hard_limit_clients: 620
     pipeline:
-      pipelines_per_server: 16
-      pipelines_per_gpu: 8
-      total_pipelines: 16
+      pipelines_per_server: 30
+      pipelines_per_gpu: 15
+      total_pipelines: 30
       max_clients_per_pipeline: 20
     rate_limiter:
-      max_clients: 320
-      window_ms: 5000
-      cleanup_ms: 5000
+      max_clients: 620
+      window_ms: 7000
+      cleanup_ms: 7000
     storage:
       provider: minio
       frames_bucket: face-frames

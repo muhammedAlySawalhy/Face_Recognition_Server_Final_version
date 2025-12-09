@@ -1,3 +1,9 @@
+x-profile-config: &profile_config_volume
+  type: bind
+  source: ${ROOT_PATH}/config/profiles.yaml
+  target: /app/config/profiles.yaml
+  read_only: true
+
 services:
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
   #-------------------------------------------------------------------------------------------------------------#
@@ -9,6 +15,7 @@ services:
       - SERVICE_TYPE=gateway
       - TZ=Africa/Cairo
       - CONFIG_PROFILE=${CONFIG_PROFILE:-prod-1gpu-24gb}
+      - CONFIG_PATH=/app/config/profiles.yaml
       - SERVER_IP=0.0.0.0
       - SERVER_PORT=8001
       - ENDPOINT_PATH=/ws
@@ -28,6 +35,7 @@ services:
       - type: bind
         source: ${DATA_DIR}
         target: /app/Data
+      - *profile_config_volume
     depends_on:
       minio:
         condition: service_healthy
@@ -45,36 +53,36 @@ services:
       - rmq_network
       - storage_network
     restart: unless-stopped
-  face-ingestor:
-    build:
-      context: ./services/Face_Ingest_Service
-      dockerfile: Dockerfile
-    image: fr-face-ingestor:latest
-    # Align container UID/GID with GUI (node user is 1000:1000) so volume writes stay writable.
-    user: "${PUID:-1000}:${PGID:-1000}"
-    container_name: fr_face_ingestor
-    environment:
-      - TZ=Africa/Cairo
-      - INGESTOR_PORT=${INGESTOR_PORT:-8010}
-      # Pipeline queue lives in-process; keep workers at 1 so ingest/execute share the same queue.
-      - INGESTOR_WORKERS=${INGESTOR_WORKERS:-1}
-      - PHONE_DETECTION_WEIGHTS=${PHONE_DETECTION_WEIGHTS:-/app/Models_Weights/phone_detection/phone_detection.pt}
-      - PHONE_DETECTION_CLASS=${PHONE_DETECTION_CLASS:-67}
-      - PHONE_DETECTION_THRESHOLD=${PHONE_DETECTION_THRESHOLD:-0.35}
-      - PHONE_DETECTION_DEVICE=${PHONE_DETECTION_DEVICE:-cpu}
-    expose:
-      - "${INGESTOR_PORT:-8010}"
-    networks:
-      - storage_network
-      - gui_network
-    volumes:
-      - type: bind
-        source: ${ROOT_PATH}/Models_Weights
-        target: /app/Models_Weights
-      - type: bind
-        source: ${DATA_DIR}
-        target: /app/Data
-    restart: unless-stopped
+  # face-ingestor:
+  #   build:
+  #     context: ./services/Face_Ingest_Service
+  #     dockerfile: Dockerfile
+  #   image: fr-face-ingestor:latest
+  #   # Align container UID/GID with GUI (node user is 1000:1000) so volume writes stay writable.
+  #   user: "${PUID:-1000}:${PGID:-1000}"
+  #   container_name: fr_face_ingestor
+  #   environment:
+  #     - TZ=Africa/Cairo
+  #     - INGESTOR_PORT=${INGESTOR_PORT:-8010}
+  #     # Pipeline queue lives in-process; keep workers at 1 so ingest/execute share the same queue.
+  #     - INGESTOR_WORKERS=${INGESTOR_WORKERS:-1}
+  #     - PHONE_DETECTION_WEIGHTS=${PHONE_DETECTION_WEIGHTS:-/app/Models_Weights/phone_detection/phone_detection.pt}
+  #     - PHONE_DETECTION_CLASS=${PHONE_DETECTION_CLASS:-67}
+  #     - PHONE_DETECTION_THRESHOLD=${PHONE_DETECTION_THRESHOLD:-0.35}
+  #     - PHONE_DETECTION_DEVICE=${PHONE_DETECTION_DEVICE:-cpu}
+  #   expose:
+  #     - "${INGESTOR_PORT:-8010}"
+  #   networks:
+  #     - storage_network
+  #     - gui_network
+  #   volumes:
+  #     - type: bind
+  #       source: ${ROOT_PATH}/Models_Weights
+  #       target: /app/Models_Weights
+  #     - type: bind
+  #       source: ${DATA_DIR}
+  #       target: /app/Data
+  #   restart: unless-stopped
   #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
   #-------------------------------------------------------------------------------------------------------------#
   # Pipeline Manager Service
@@ -86,6 +94,10 @@ services:
       - SERVICE_TYPE=pipelines-manager
       - TZ=Africa/Cairo
       - CONFIG_PROFILE=${CONFIG_PROFILE:-prod-1gpu-24gb}
+      - CONFIG_PATH=/app/config/profiles.yaml
+      - PIPELINES_PER_SERVER=${PIPELINES_PER_SERVER:-}
+      - PIPELINES_TOTAL=${PIPELINES_TOTAL:-}
+      - MAX_CLIENTS_PER_PIPELINE=${MAX_CLIENTS_PER_PIPELINE:-}
       - REDIS_HOSTNAME=Redis_Server
       - REDIS_HOSTPORT=6379
       - RMQ_URL=amqp://admin:admin123@rmq_Server:5672
@@ -93,6 +105,7 @@ services:
       - type: bind
         source: ${DATA_DIR}/logs/${SERVER_NAME}
         target: /app/${SERVER_NAME}/logs
+      - *profile_config_volume
     depends_on:
       - Redis_Server
       - rmq_Server
@@ -112,6 +125,7 @@ services:
       - TZ=Africa/Cairo
       - RMQ_URL=amqp://admin:admin123@rmq_Server:5672
       - NAMESPACE=${SERVER_NAME}
+      - CONFIG_PATH=/app/config/profiles.yaml
     volumes:
       - type: bind
         source: ${DATA_DIR}/logs/${SERVER_NAME}
@@ -119,6 +133,7 @@ services:
       - type: bind
         source: ${DATA_DIR}
         target: /app/Data
+      - *profile_config_volume
     depends_on:
       - rmq_Server
     networks:
@@ -138,6 +153,7 @@ services:
       - NAMESPACE=${SERVER_NAME}
       - SERVER_NAME=${SERVER_NAME}
       - TZ=Africa/Cairo
+      - CONFIG_PATH=/app/config/profiles.yaml
       - REDIS_HOSTNAME=Redis_Server
       - REDIS_HOSTPORT=6379
       - RMQ_URL=amqp://admin:admin123@rmq_Server:5672
@@ -151,6 +167,7 @@ services:
       - type: bind
         source: ${DATA_DIR}
         target: /app/Data
+      - *profile_config_volume
     depends_on:
       - rmq_Server
       - Redis_Server
@@ -176,7 +193,7 @@ services:
       - "${MINIO_API_PORT:-9100}:9000" # S3 API
       - "${MINIO_CONSOLE_PORT:-9001}:9001" # Console
     volumes:
-      - /srv/minio:/data
+      - /home/mirando/Data/server/Data/minio:/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
@@ -501,13 +518,16 @@ services:
       - NGINX_WORKER_OPEN_FILES=65535
       - NGINX_WORKER_CONNECTIONS=16384
       - NGINX_RATE_LIMIT_ZONE=1m
-      - TOTAL_CLIENTS=200
-      - NGINX_RATE_LIMIT_RPS=6
-      - NGINX_RATE_LIMIT_CONN=6
+      - TOTAL_CLIENTS=300
+      # - NGINX_RATE_LIMIT_RPS=3
+      # - NGINX_RATE_LIMIT_CONN=3
+      # - NGINX_RATE_LIMIT_BURST=3
+      - NGINX_RATE_LIMIT_RPS=320
+      - NGINX_RATE_LIMIT_CONN=320
       - NGINX_RATE_LIMIT_BURST=10
       - NGINX_RATE_LIMIT_ZONE_GLOBAL=1m
-      - NGINX_RATE_LIMIT_RPS_GLOBAL=200
-      - NGINX_RATE_LIMIT_CONN_GLOBAL=200
+      - NGINX_RATE_LIMIT_RPS_GLOBAL=600
+      - NGINX_RATE_LIMIT_CONN_GLOBAL=600
       - NGINX_RATE_LIMIT_BURST_GLOBAL=20
     networks:
       - fr_network

@@ -130,13 +130,36 @@ def full_system_initialization(service_file_path, service_name):
 
 
 def get_environment_config():
+    def _override_int(key: str, default: int) -> int:
+        raw_value = os.getenv(key)
+        if raw_value is None or raw_value == "":
+            return default
+        try:
+            return int(raw_value)
+        except ValueError:
+            return default
+
+    def _override_bool(key: str, default: bool) -> bool:
+        raw_value = os.getenv(key)
+        if raw_value is None:
+            return default
+        return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
     config_manager = ConfigManager.instance()
     pipeline_cfg = config_manager.pipeline
     service_settings = config_manager.service_settings("pipeline_worker")
 
+    pipelines_per_server = _override_int(
+        "PIPELINES_PER_SERVER", pipeline_cfg.pipelines_per_server
+    )
+    total_pipelines = _override_int("PIPELINES_TOTAL", pipeline_cfg.total_pipelines)
+    warmup_batch = _override_bool(
+        "WARMUP_BATCH", bool(service_settings.get("warmup_batch", False))
+    )
+
     return {
-        "MaxPipeline": pipeline_cfg.pipelines_per_server,
-        "PIPELINES_TOTAL": pipeline_cfg.total_pipelines,
-        "WARMUP_BATCH": bool(service_settings.get("warmup_batch", False)),
+        "MaxPipeline": pipelines_per_server,
+        "PIPELINES_TOTAL": total_pipelines,
+        "WARMUP_BATCH": warmup_batch,
         "CONFIG_PROFILE": config_manager.profile_name,
     }
