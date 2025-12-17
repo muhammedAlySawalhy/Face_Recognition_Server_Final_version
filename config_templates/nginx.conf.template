@@ -1,4 +1,3 @@
-# nginx.conf.template
 worker_processes ${NGINX_WORKER_PROCESSES};
 worker_rlimit_nofile ${NGINX_WORKER_OPEN_FILES};
 
@@ -8,12 +7,14 @@ events {
 }
 
 http {
-    # Per-client-IP limits (new connection rate and concurrent connections).
+    # Per-client-IP request-rate limiter (handshake only).
     limit_req_zone ${NGINX_DOLLAR}binary_remote_addr zone=gateway_rate_limit:${NGINX_RATE_LIMIT_ZONE} rate=${NGINX_RATE_LIMIT_RPS}r/s;
+    # Per-client-IP concurrent connections limiter (good for WebSockets).
     limit_conn_zone ${NGINX_DOLLAR}binary_remote_addr zone=gateway_conn_limit:${NGINX_RATE_LIMIT_ZONE};
 
-    # Global limits across all clients combined.
+    # Global (all clients) request-rate limiter (handshake only).
     limit_req_zone ${NGINX_DOLLAR}server_name zone=gateway_rate_limit_global:${NGINX_RATE_LIMIT_ZONE_GLOBAL} rate=${NGINX_RATE_LIMIT_RPS_GLOBAL}r/s;
+    # Global concurrent connections limiter.
     limit_conn_zone ${NGINX_DOLLAR}server_name zone=gateway_conn_limit_global:${NGINX_RATE_LIMIT_ZONE_GLOBAL};
 
     upstream websocket_backend {
@@ -21,28 +22,42 @@ http {
         server ${GATEWAY_HOST}:${GATEWAY_PORT};
     }
 
+    # WebSocket connection header map
+    map ${NGINX_DOLLAR}http_upgrade ${NGINX_DOLLAR}connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
     server {
         listen ${NGINX_PORT};
+        # Optional: set server_name if you want a distinct global limiter bucket.
+        # server_name _;
 
         location / {
-            # Apply per-IP and global concurrency limits.
+            # Concurrency limits (WebSocket connections).
             limit_conn gateway_conn_limit ${NGINX_RATE_LIMIT_CONN};
             limit_conn gateway_conn_limit_global ${NGINX_RATE_LIMIT_CONN_GLOBAL};
+            limit_conn_status 429;
 
-            # Apply per-IP and global rate limits on new connection handshakes (fixed window with burst).
-            limit_req zone=gateway_rate_limit burst=${NGINX_RATE_LIMIT_BURST} nodelay;
+            # Handshake rate limits (HTTP upgrade only).
+            limit_req zone=gateway_rate_limit        burst=${NGINX_RATE_LIMIT_BURST} nodelay;
             limit_req zone=gateway_rate_limit_global burst=${NGINX_RATE_LIMIT_BURST_GLOBAL} nodelay;
+            limit_req_status 429;
 
+            # WebSocket headers
             proxy_set_header Host ${NGINX_DOLLAR}host;
             proxy_set_header X-Real-IP ${NGINX_DOLLAR}remote_addr;
             proxy_set_header X-Forwarded-For ${NGINX_DOLLAR}proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto ${NGINX_DOLLAR}scheme;
             proxy_http_version 1.1;
             proxy_set_header Upgrade ${NGINX_DOLLAR}http_upgrade;
-            proxy_set_header Connection "upgrade";
+            proxy_set_header Connection ${NGINX_DOLLAR}connection_upgrade;
 
-            proxy_read_timeout 3600s;
-            proxy_send_timeout 3600s;
+            # Allow up to ~5 minutes of upstream silence (AI processing),
+            # but don’t buffer and still rely on heartbeats/app-level checks.
+            proxy_read_timeout 320s;
+            proxy_send_timeout 320s;
+            proxy_buffering off;
 
             proxy_pass http://websocket_backend;
         }
